@@ -391,7 +391,7 @@ function flash(message){
   toastTimer=setTimeout(()=>toast.textContent='',3600);
 }
 async function refreshMembers(){
-  const [people,emails]=await Promise.allSettled([loadAssignees(),isAdmin?loadAssigneeEmails():[]]);
+  const [people,emails]=await Promise.allSettled([loadAssignees(),canWrite?loadAssigneeEmails():[]]);
   membersReady=people.status==='fulfilled';
   if(membersReady)members=people.value;
   assigneeEmails=new Map(emails.status==='fulfilled'?emails.value.map(row=>[row.user_id,row.email]):[]);
