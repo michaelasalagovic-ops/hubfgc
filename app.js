@@ -1,4 +1,4 @@
-import {start,isAdmin,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js';
+import {start,isAdmin,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=1a6b83cea2cb';
 import {needs,topics} from './data.js';
 
 const sections = {
