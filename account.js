@@ -4,6 +4,14 @@ let session=JSON.parse(sessionStorage.getItem('fcg-session')||'null');
 let refreshing;
 export let isAdmin=false;
 export let canWrite=false;
+export const currentUserId=()=>session?.user?.id;
+export const currentUserEmail=()=>session?.user?.email;
+
+export async function loadAssignees(){
+  const response=await api('/rest/v1/rpc/fcg_task_assignees',{method:'POST'});
+  if(!response.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
+  return response.json();
+}
 const roleLabels={admin:'Administrátor',editor:'Editor',reader:'Čtenář'};
 const fileUrls=new Map();
 const main=document.querySelector('#main');
@@ -99,7 +107,7 @@ export async function start(){
     if(!email.reportValidity())return;
     reset.disabled=true;
     try{
-      const redirect=location.origin+location.pathname;
+      const redirect=new URL('./',location.href).href;
       const response=await auth('recover?redirect_to='+encodeURIComponent(redirect),{email:email.value.trim()});
       if(response.status===429)throw Error('Odkaz nyní nelze odeslat kvůli limitu. Zkuste to později.');
       if(!response.ok)throw Error('Obnovu hesla se nepodařilo spustit. Zkuste to prosím později.');
@@ -174,7 +182,8 @@ export async function fileUrl(path){
   const url=URL.createObjectURL(blob);fileUrls.set(path,url);return url;
 }
 export function accountPanel(){
-  return '<h1>Správa účtu</h1><p>Vaše role v HUBu: <strong>'+roleLabels[isAdmin?'admin':canWrite?'editor':'reader']+'</strong></p>'+
+  return '<div class="heading"><div><h1>Správa účtu</h1><p>Vaše role v HUBu: <strong>'+roleLabels[isAdmin?'admin':canWrite?'editor':'reader']+'</strong></p></div></div>'+
+    '<form class="form-grid panel account-name" data-display-name><label class="field">Zobrazované jméno v HUBu<input name="displayName" type="text" maxlength="60" required></label><button type="submit" class="btn">Uložit jméno</button><small class="wide" data-name-hint></small><p class="wide" role="status" data-name-status></p></form>'+
     '<form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
     (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
     '<form class="form-grid panel" data-member aria-labelledby="create-member-title"><h3 class="wide" id="create-member-title">Nový přihlašovací účet</h3>'+
@@ -189,6 +198,35 @@ export function accountPanel(){
 export async function bindAccount(){
   const status=main.querySelector('[data-account-status]');
   main.querySelector('[data-signout]').onclick=signOut;
+  const nameForm=main.querySelector('[data-display-name]');
+  const nameField=nameForm.elements.displayName;
+  const nameStatus=nameForm.querySelector('[data-name-status]');
+  nameField.value=session.user?.user_metadata?.fcg_display_name||'';
+  const hint=nameForm.querySelector('[data-name-hint]');
+  const showNameHint=()=>{
+    hint.textContent=session.user?.user_metadata?.fcg_display_name
+      ?'Toto jméno se členům HUBu zobrazuje při výběru držitele úkolu.'
+      :'V nabídce držitelů jste zatím vedeni jako Člen týmu · '+(currentUserId()||'').slice(0,8)+'.';
+  };
+  showNameHint();
+  nameForm.onsubmit=async event=>{
+    event.preventDefault();
+    const name=nameField.value.trim();
+    const button=nameForm.querySelector('button');
+    if(!name||button.disabled)return;
+    button.disabled=true;
+    try{
+      const r=await api('/auth/v1/user',{method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({data:{fcg_display_name:name}})});
+      if(!r.ok)throw Error();
+      saveSession({...session,user:await r.json()});
+      nameField.value=name;
+      showNameHint();
+      nameStatus.textContent='Jméno bylo uloženo.';
+      document.dispatchEvent(new Event('fcg-members-changed'));
+    }catch{nameStatus.textContent='Jméno se nepodařilo uložit.';}
+    finally{button.disabled=false;}
+  };
   main.querySelector('[data-password]').onsubmit=async e=>{
     e.preventDefault();const form=e.currentTarget;
     try{const r=await api('/auth/v1/user',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:form.password.value})});if(!r.ok)throw Error();form.reset();status.textContent='Heslo bylo změněno.';}catch{status.textContent='Změna hesla selhala.';}

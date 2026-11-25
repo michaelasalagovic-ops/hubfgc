@@ -4,8 +4,9 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>FyzioGym Cooper | Projektový hub</title>
-<link rel="stylesheet" href="./style.css?v=member-password-1">
-<script type="module" src="./app.js?v=member-password-1"></script>
+<link rel="stylesheet" href="./tailwind.css?v=hub-1">
+<link rel="stylesheet" href="./style.css?v=hub-1">
+<script type="module" src="./app.js?v=hub-1"></script>
 </head>
 <body>
 <aside class="rail">
@@ -14,10 +15,23 @@
   <a class="rail-foot" href="https://fyziogym.cz/" target="_blank" rel="noopener">fyziogym.cz ↗</a>
 </aside>
 <main>
-  <header class="top"><span>Pracovní prostor <b>/</b> <span id="crumb"></span></span><span id="sync" role="status">Načítám data…</span></header>
+  <header class="top"><span>Pracovní prostor <b>/</b> <span id="crumb"></span></span>
+    <div class="flex items-center gap-3">
+      <span id="sync" role="status">Načítám data…</span>
+      <button type="button" class="bell" id="notification-button" popovertarget="notifications" aria-label="Moje úkoly" hidden>
+        <svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12a2 2 0 0 0 4 0"/></svg>
+        <span id="notification-count" aria-hidden="true" hidden></span>
+      </button>
+    </div>
+    <section id="notifications" popover aria-labelledby="notification-heading">
+      <h2 id="notification-heading">Moje úkoly</h2>
+      <p id="notification-summary"></p><ul id="notification-list"></ul>
+    </section>
+  </header>
   <div class="container" id="main"></div>
 </main>
 <dialog id="editor" aria-labelledby="editor-title"></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
+<template id="hero-art"><div class="hero-art" aria-hidden="true"><div class="arches"><i></i><i></i><i></i></div><canvas></canvas></div></template>
 </body>
 </html>

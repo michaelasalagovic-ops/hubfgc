@@ -1,4 +1,4 @@
-import {start,isAdmin,canWrite,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=member-password-1';
+import {start,isAdmin,canWrite,currentUserId,currentUserEmail,loadAssignees,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-1';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -27,6 +27,10 @@ const filters={q:'',type:'',service:'',audience:'',status:'',priority:''};
 let view='prehled', mapMode='tree', ready=false, loading=true, toastTimer;
 const main=document.querySelector('#main');
 const dialog=document.querySelector('#editor');
+const heroArt=document.querySelector('#hero-art').content.firstElementChild.cloneNode(true);
+const bell=document.querySelector('#notification-button');
+const notifications=document.querySelector('#notifications');
+let members=[],membersReady=false,motionStarted=false;
 const esc=(value='')=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uniq=list=>[...new Set(list.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'cs'));
 const isDone=r=>['Publikováno','Hotovo'].includes(r.status);
@@ -156,6 +160,75 @@ const lanes=[
 let roadMode='board',topic=topics[0],ownerFilter='',areaFilter='',tagFilter='';
 const allTasks=()=>[...records.values()].filter(r=>r.kind==='task');
 const normalized=value=>value.trim().normalize('NFC').toLocaleLowerCase('cs');
+const otherOwner='other';
+function assignedMemberId(task){
+  if(Object.hasOwn(task,'ownerId'))return task.ownerId;
+  const email=normalized(task.owner||'');
+  return email&&email===normalized(currentUserEmail()||'')?currentUserId():null;
+}
+function memberLabel(member){
+  const duplicate=members.some(row=>row.user_id!==member.user_id&&normalized(row.display_name)===normalized(member.display_name));
+  return member.display_name+(duplicate?' · '+member.user_id.slice(0,8):'');
+}
+function taskOwner(task){
+  const member=members.find(row=>row.user_id===assignedMemberId(task));
+  return member?memberLabel(member):task.owner||'';
+}
+function ownerField(task){
+  const member=members.find(row=>row.user_id===assignedMemberId(task));
+  const useOther=!member&&Boolean(task.owner||task.ownerId);
+  const choices=members.map(row=>({value:row.user_id,label:memberLabel(row)}));
+  const choice=member?.user_id||(useOther?otherOwner:'');
+  return '<label class="field">Držitel úkolu<select name="ownerChoice">'+options([...choices,{value:otherOwner,label:'Jiné'}],choice,'Bez přiřazení')+'</select></label>'+
+    '<div class="wide" data-custom-owner '+(useOther?'':'hidden')+'><label class="field">Jiný držitel úkolu<input name="customOwner" placeholder="Např. agentura" value="'+esc(useOther?task.owner:'')+'" '+(useOther?'required':'disabled')+'></label></div>'+
+    (membersReady?'':'<p class="help wide">Tým se nepodařilo načíst. Znovu ho načtete obnovením stránky.</p>');
+}
+function renderNotifications(){
+  const userId=currentUserId();
+  bell.hidden=!ready||!userId;
+  if(bell.hidden){
+    if(notifications.matches(':popover-open'))notifications.hidePopover();
+    return;
+  }
+  const mine=allTasks().filter(task=>assignedMemberId(task)===userId)
+    .sort((a,b)=>Number(isDone(a))-Number(isDone(b))||(a.date||'9999').localeCompare(b.date||'9999')||a.title.localeCompare(b.title,'cs'));
+  const active=mine.filter(task=>!isDone(task)).length;
+  const count=document.querySelector('#notification-count');
+  count.hidden=!active;
+  count.textContent=active>99?'99+':active;
+  bell.setAttribute('aria-label',active?'Moje úkoly, otevřené: '+active:'Moje úkoly');
+  document.querySelector('#notification-summary').textContent=mine.length
+    ?'Otevřené úkoly: '+active+' · Celkem: '+mine.length
+    :'Zatím nemáte přidělené žádné úkoly.';
+  document.querySelector('#notification-list').innerHTML=mine.map(task=>'<li><button type="button" data-notice-task="'+esc(task.id)+'">'+
+    '<strong>'+esc(task.title)+'</strong><span>'+esc(task.status)+' · '+esc(dateText(task.date)||'Bez termínu')+'</span></button></li>').join('');
+}
+notifications.addEventListener('click',event=>{
+  const button=event.target.closest('[data-notice-task]');
+  if(!button)return;
+  const task=records.get(button.dataset.noticeTask);
+  if(!task||assignedMemberId(task)!==currentUserId())return;
+  notifications.hidePopover();
+  bell.focus();
+  editor(task);
+});
+notifications.addEventListener('toggle',async event=>{
+  if(event.newState!=='open')return;
+  try{
+    let changed=false;
+    for(const row of await loadRecords()){
+      if(row.version<=(versions.get(row.id)||0))continue;
+      versions.set(row.id,row.version);
+      if(row.deleted)records.delete(row.id);
+      else records.set(row.id,row.record);
+      changed=true;
+    }
+    if(changed&&view!=='ucet'&&!dialog.open)render();
+    else if(changed)renderNotifications();
+  }catch{
+    if(notifications.matches(':popover-open'))flash('Přehled ukazuje poslední načtené úkoly.');
+  }
+});
 const taskTags=r=>Array.isArray(r.tags)?r.tags:[];
 function parseTags(raw){
   const known=new Map(allTasks().flatMap(taskTags).map(t=>[normalized(t),t]));
@@ -181,17 +254,18 @@ function filterChoices(values,emptyLabel){
 }
 function taskTile(r){
   return '<article class="ticket" draggable="'+(ready&&canWrite)+'" data-ticket="'+esc(r.id)+'"><small>'+esc(r.category)+'</small><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button>'+
-    tagBadges(r)+(r.product?'<p>'+esc(r.product)+'</p>':'')+
-    '<footer><span>'+esc(r.owner||'Bez přiřazení')+'</span><time>'+esc(dateText(r.date)||'Bez termínu')+'</time></footer></article>';
+    '<div class="badges flex flex-wrap gap-2">'+priorityBadge(r)+'</div>'+tagBadges(r)+(r.product?'<p>'+esc(r.product)+'</p>':'')+
+    '<footer><span>'+esc(taskOwner(r)||'Bez přiřazení')+'</span><time>'+esc(dateText(r.date)||'Bez termínu')+'</time></footer></article>';
 }
 function roadmap(){
   const tasks=allTasks();
-  const owners=filterChoices(tasks.map(r=>r.owner),'Bez přiřazení');
+  const owners=filterChoices(tasks.map(taskOwner),'Bez přiřazení');
   const tags=filterChoices(tasks.flatMap(taskTags),'Bez štítku');
   if(!owners.some(item=>item.value===ownerFilter))ownerFilter='';
   if(!tags.some(item=>item.value===tagFilter))tagFilter='';
   const selected=tasks.filter(r=>{
-    const owner=r.owner?'value:'+normalized(r.owner):'empty';
+    const name=taskOwner(r);
+    const owner=name?'value:'+normalized(name):'empty';
     const tagValues=taskTags(r).map(tag=>'value:'+normalized(tag));
     const matchesTag=!tagFilter||(tagFilter==='empty'?tagValues.length===0:tagValues.includes(tagFilter));
     return (!areaFilter||r.category===areaFilter)&&(!ownerFilter||owner===ownerFilter)&&matchesTag;
@@ -206,7 +280,7 @@ function roadmap(){
   }else{
     const groups=new Map();
     for(const r of selected){const key=r.date||'';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);}
-    result='<div class="timeline">'+([...groups].map(([date,items])=>'<section><h2>'+esc(dateText(date)||'Bez termínu')+'</h2><div>'+items.map(r=>'<div class="time-row"><div><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button>'+tagBadges(r)+'</div><span>'+esc(r.owner||'Bez přiřazení')+'</span>'+statusBadge(r)+'</div>').join('')+'</div></section>').join('')||noResults('Výběru neodpovídají žádné úkoly.'))+'</div>';
+    result='<div class="timeline">'+([...groups].map(([date,items])=>'<section><h2>'+esc(dateText(date)||'Bez termínu')+'</h2><div>'+items.map(r=>'<div class="time-row"><div><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button>'+tagBadges(r)+'</div><span>'+esc(taskOwner(r)||'Bez přiřazení')+'</span>'+statusBadge(r)+'</div>').join('')+'</div></section>').join('')||noResults('Výběru neodpovídají žádné úkoly.'))+'</div>';
   }
   return heading('Roadmapa',sections.roadmapa[2],action('+ Přidat úkol','data-new="project"','primary'))+
     '<div class="road-tools"><div class="actions">'+control('Podle stavu','board')+control('Časová osa','time')+'</div><div class="actions"><select aria-label="Oblast úkolů" data-road-filter="area">'+options(uniq(tasks.map(r=>r.category)),areaFilter,'Všechny oblasti')+'</select><select aria-label="Držitel úkolu" data-road-filter="owner">'+options(owners,ownerFilter,'Všichni držitelé')+'</select><select aria-label="Štítek úkolu" data-road-filter="tag">'+options(tags,tagFilter,'Všechny štítky')+'</select></div></div>'+
@@ -226,13 +300,13 @@ function meetings(){
   const tasks=allTasks();
   const cards=list.map(r=>{
     const linked=tasks.filter(t=>t.meetingId===r.id);
-    return '<article class="card"><small>'+esc(dateText(r.date))+'</small><h2>'+esc(r.title)+'</h2>'+
+    return '<article class="card meeting-card"><time datetime="'+esc(r.date)+'">'+esc(dateText(r.date))+'</time><h2>'+esc(r.title)+'</h2>'+
       '<p class="meeting-notes">'+esc(r.notes)+'</p>'+
       (linked.length?'<h3>To Do</h3>'+linked.map(t=>'<button class="list-row" '+editAttr(t.id)+'><strong>'+esc(t.title)+'</strong>'+statusBadge(t)+'</button>').join(''):'')+
       '<div class="actions">'+action(canWrite?'Upravit zápis':'Otevřít zápis',editAttr(r.id))+action('+ Přidat úkol','data-meeting-task="'+esc(r.id)+'"')+'</div></article>';
   });
   return heading('Meetingy',sections.meetingy[2],action('+ Nový zápis','data-new="meeting"','primary'))+
-    (list.length?'<div class="cards">'+cards.join('')+'</div>':noResults('Zatím tu nejsou žádné zápisy ze schůzek.'));
+    (list.length?'<div class="meeting-timeline grid gap-4">'+cards.join('')+'</div>':noResults('Zatím tu nejsou žádné zápisy ze schůzek.'));
 }
 function knowledge(){
   const data=[...records.values()].filter(r=>r.kind==='note'&&r.category===topic);
@@ -259,9 +333,17 @@ main.addEventListener('dragstart',event=>{
   if(id)event.dataTransfer.setData('text/plain',id);
 });
 main.addEventListener('dragover',event=>{
-  if(canWrite&&event.target.closest('[data-drop]'))event.preventDefault();
+  const lane=event.target.closest('[data-drop]');
+  if(canWrite&&lane){event.preventDefault();lane.classList.add('drop-active');}
 });
+main.addEventListener('dragleave',event=>{
+  const lane=event.target.closest('[data-drop]');
+  if(lane&&!lane.contains(event.relatedTarget))lane.classList.remove('drop-active');
+});
+const clearDrop=()=>main.querySelectorAll('.drop-active').forEach(lane=>lane.classList.remove('drop-active'));
+main.addEventListener('dragend',clearDrop);
 main.addEventListener('drop',async event=>{
+  clearDrop();
   const status=event.target.closest('[data-drop]')?.dataset.drop;
   const r=records.get(event.dataTransfer.getData('text/plain'));
   if(!canWrite||!ready||!status||r?.kind!=='task')return;
@@ -281,6 +363,15 @@ function render(){
   main.innerHTML=loading?noResults('Načítám pracovní prostor…'):({
     ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,strategie:knowledge,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView
   })[view]();
+  const heading=main.querySelector('.heading');
+  if(heading){
+    heading.append(heroArt);
+    if(!motionStarted&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+      motionStarted=true;
+      import('./motion.js').then(({startMotion})=>startMotion(heroArt.querySelector('canvas'))).catch(()=>{});
+    }
+  }
+  renderNotifications();
   if(view==='ucet'&&!loading)bindAccount();
   if(view==='stranky'&&!loading) fillResults();
   if(!ready&&!loading) main.insertAdjacentHTML('afterbegin','<p class="error">Zobrazeny dostupné podklady. Pro úpravy obnovte připojení. '+action('Zkusit znovu','data-retry','link')+'</p>');
@@ -289,6 +380,7 @@ function route(){
   const section=location.hash.slice(1);
   view=Object.hasOwn(sections,section)?section:'roadmapa';
   render();
+  if(ready)refreshMembers().then(renderNotifications);
 }
 function flash(message){
   const toast=document.querySelector('#toast');
@@ -296,11 +388,16 @@ function flash(message){
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>toast.textContent='',3600);
 }
+async function refreshMembers(){
+  try{members=await loadAssignees();membersReady=true;}
+  catch{membersReady=false;}
+}
+document.addEventListener('fcg-members-changed',()=>refreshMembers().then(renderNotifications));
 async function load(){
   loading=true;
   render();
   try{
-    const data=await loadRecords();
+    const [data]=await Promise.all([loadRecords(),refreshMembers()]);
     records.clear();
     versions.clear();
     for(const row of data){
@@ -364,7 +461,7 @@ function editor(record,defaultType,meetingId){
     service:defaultType==='video'?'Koučink':'',parent:defaultType==='video'?'videos':defaultType==='local'?'branches':'',
     category:defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{})}:{links:[]})});
   const pageChoices=listed().filter(p=>p.id!==r.id).map(p=>({value:p.id,label:p.title}));
-  const workflow=input(r,'owner',task?'Držitel úkolu':'Vlastník')+input(r,'date','Termín',{type:'date'})+
+  const workflow=(task?ownerField(r):input(r,'owner','Vlastník'))+input(r,'date','Termín',{type:'date'})+
     input(r,'status','Stav',{values:statuses,required:true})+input(r,'priority','Priorita',{values:priorities,required:true});
   const requiredTitle=input(r,'title',task?'Název úkolu':'Název stránky',{wide:true,required:true});
   let fields;
@@ -429,6 +526,15 @@ function editor(record,defaultType,meetingId){
   }
   const revision=versions.get(r.id)??0;
   const blockList=form.querySelector('[data-content-blocks]');
+  if(task){
+    const {ownerChoice,customOwner}=form.elements;
+    ownerChoice.onchange=()=>{
+      const custom=ownerChoice.value===otherOwner;
+      form.querySelector('[data-custom-owner]').hidden=customOwner.disabled=!custom;
+      customOwner.required=custom;
+      if(custom)customOwner.focus();
+    };
+  }
   form.addEventListener('click',event=>{
     const button=event.target.closest('button');
     if(button?.hasAttribute('data-add-tag')){
@@ -454,7 +560,7 @@ function editor(record,defaultType,meetingId){
     event.preventDefault();
     const fd=new FormData(form);
     const blockFields=new Set([...contentKeys,'docFile','imageFile','uploadedImage']);
-    const pageFields=[...fd].filter(([key])=>key!=='links'&&!blockFields.has(key));
+    const pageFields=[...fd].filter(([key])=>!['links','ownerChoice','customOwner'].includes(key)&&!blockFields.has(key));
     const update={...r,...Object.fromEntries(pageFields.map(([key,value])=>[key,value.trim()]))};
     if(doc){
       if(!update.title){showError('Doplňte název dokumentu.');return;}
@@ -475,7 +581,18 @@ function editor(record,defaultType,meetingId){
       finally{controls.forEach(el=>el.disabled=false);}
       return;
     }
-    if(task) update.tags=parseTags(fd.get('tags')||'');
+    if(task){
+      const choice=fd.get('ownerChoice');
+      const member=members.find(row=>row.user_id===choice);
+      const custom=fd.get('customOwner')?.trim();
+      if(choice===otherOwner&&!custom){showError('Doplňte jméno nebo název držitele úkolu.');return;}
+      if(choice&&choice!==otherOwner&&!member){showError('Vybraný uživatel už není v nabídce. Otevřete úkol znovu.');return;}
+      update.owner=member?.display_name||(choice===otherOwner?custom:'');
+      if(member||choice!==otherOwner||custom!==r.owner||membersReady){
+        update.ownerId=member?.user_id??(choice===otherOwner&&custom===r.owner?r.ownerId??null:null);
+      }
+      update.tags=parseTags(fd.get('tags')||'');
+    }
     if(meeting){
       update.title ||= 'Schůzka '+dateText(update.date);
       const addTask=event.submitter?.hasAttribute('data-save-and-add');
