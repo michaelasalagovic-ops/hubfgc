@@ -1,4 +1,4 @@
-import {start,isAdmin,canWrite,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-2';
+import {start,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-4';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -21,6 +21,14 @@ const priorities=['Vysoká','Střední','Nízká'];
 const types=['Rozcestník','Potřeba','Služba','Obsah','Video','Praktické informace','Lokální SEO'];
 const categories=['Migrace','Obsah','Lokální SEO','Měření','AEO / GEO'];
 const projectAreas=['Projekt','Značka','Nabídka','Provoz'];
+const webViews=['prehled','stranky','sitemap','obsah','lokalni','mereni','podklady','plan'];
+const canOpen=id=>id==='ucet'||allowedSections.includes(webViews.includes(id)?'web':id);
+const firstView=()=>['roadmapa','meetingy','dokumenty','prehled','strategie','ucet'].find(canOpen);
+const taskSection=(category,meetingId)=>meetingId?'meetingy':categories.includes(category)?'web':'roadmapa';
+function recordSection(record){
+  if(record.kind==='task')return taskSection(record.category,record.meetingId);
+  return {meeting:'meetingy',document:'dokumenty',note:'strategie'}[record.kind]||'web';
+}
 const records=new Map();
 const versions=new Map();
 const filters={q:'',type:'',service:'',audience:'',status:'',priority:''};
@@ -36,7 +44,7 @@ const esc=(value='')=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 const uniq=list=>[...new Set(list.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'cs'));
 const isDone=r=>['Publikováno','Hotovo'].includes(r.status);
 const listed=()=>[...records.values()].filter(r=>!['task','note','meeting','document'].includes(r.kind));
-const planned=()=>[...records.values()].filter(r=>r.kind==='task'&&!projectAreas.includes(r.category));
+const planned=()=>[...records.values()].filter(r=>r.kind==='task'&&recordSection(r)==='web');
 const sortByPriority=(a,b)=>priorities.indexOf(a.priority)-priorities.indexOf(b.priority)||(a.date||'9999').localeCompare(b.date||'9999');
 const dateText=value=>value?new Intl.DateTimeFormat('cs-CZ',{dateStyle:'medium',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z')):'';
 const badge=(value,kind='')=>'<span class="badge '+kind+'">'+esc(value)+'</span>';
@@ -218,7 +226,16 @@ notifications.addEventListener('toggle',async event=>{
   if(event.newState!=='open')return;
   try{
     let changed=false;
-    for(const row of await loadRecords()){
+    const [,rows]=await Promise.all([refreshSections(),loadRecords()]);
+    for(const [id,record] of records){
+      if(!canOpen(recordSection(record))){
+        records.delete(id);
+        versions.delete(id);
+        changed=true;
+      }
+    }
+    for(const row of rows){
+      if(!row.deleted&&!canOpen(recordSection(row.record)))continue;
       if(row.version<=(versions.get(row.id)||0))continue;
       versions.set(row.id,row.version);
       if(row.deleted)records.delete(row.id);
@@ -355,10 +372,17 @@ main.addEventListener('drop',async event=>{
 });
 
 function render(){
+  if(!canOpen(view)){
+    view=firstView();
+    history.replaceState(null,'','#'+view);
+  }
   document.querySelector('#crumb').textContent=sections[view][1];
   const link=(id,title=sections[id][1])=>'<a href="#'+id+'" '+(id===view?'aria-current="page"':'')+'><span class="nav-icon" aria-hidden="true">'+sections[id][0]+'</span>'+title+'</a>';
-  const web=Object.keys(sections).filter(id=>!['ucet','roadmapa','meetingy','dokumenty','strategie'].includes(id));
-  document.querySelector('#nav').innerHTML=link('roadmapa')+link('meetingy')+link('dokumenty')+link('prehled','Web')+(web.includes(view)?'<div class="subnav">'+web.map(id=>link(id)).join('')+'</div>':'')+link('strategie')+link('ucet');
+  document.querySelector('.brand').setAttribute('href','#'+firstView());
+  document.querySelector('#nav').innerHTML=['roadmapa','meetingy','dokumenty','prehled','strategie','ucet'].filter(canOpen).map(id=>{
+    if(id!=='prehled')return link(id);
+    return link(id,'Web')+(webViews.includes(view)?'<div class="subnav">'+webViews.map(item=>link(item)).join('')+'</div>':'');
+  }).join('');
   const sync=document.querySelector('#sync');
   sync.textContent=ready?(canWrite?'Ukládání do hubu':'Režim čtení'):loading?'Načítám data…':'Připojení se nezdařilo';
   sync.classList.toggle('ready',ready);
@@ -380,7 +404,7 @@ function render(){
 }
 function route(){
   const section=location.hash.slice(1);
-  view=Object.hasOwn(sections,section)?section:'roadmapa';
+  view=Object.hasOwn(sections,section)?section:firstView();
   render();
   if(ready)refreshMembers().then(renderNotifications);
 }
@@ -401,11 +425,11 @@ async function load(){
   loading=true;
   render();
   try{
-    const [data]=await Promise.all([loadRecords(),refreshMembers()]);
+    const [data]=await Promise.all([loadRecords(),refreshMembers(),refreshSections()]);
     records.clear();
     versions.clear();
     for(const row of data){
-      if(!row.deleted) records.set(row.id,row.record);
+      if(!row.deleted&&canOpen(recordSection(row.record))) records.set(row.id,row.record);
       if(row.version) versions.set(row.id,row.version);
     }
     ready=true;
@@ -464,6 +488,7 @@ function editor(record,defaultType,meetingId){
   const r=record??(doc?{kind:'document',id:crypto.randomUUID(),title:'',files:[]}:meeting?{kind:'meeting',id:crypto.randomUUID(),date:localDate,title:'',notes:''}:{id:crypto.randomUUID(),title:'',type:defaultType==='video'?'Video':defaultType==='local'?'Lokální SEO':'Obsah',
     service:defaultType==='video'?'Koučink':'',parent:defaultType==='video'?'videos':defaultType==='local'?'branches':'',
     category:defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{})}:{links:[]})});
+  if(!canOpen(recordSection(r)))return;
   const pageChoices=listed().filter(p=>p.id!==r.id).map(p=>({value:p.id,label:p.title}));
   const workflow=(task?ownerField(r):input(r,'owner','Vlastník'))+input(r,'date','Termín',{type:'date'})+
     input(r,'status','Stav',{values:statuses,required:true})+input(r,'priority','Priorita',{values:priorities,required:true});
@@ -479,8 +504,9 @@ function editor(record,defaultType,meetingId){
     fields=group('Podklad',input(r,'title','Název',{wide:true,required:true})+input(r,'category','Oblast',{values:topics,required:true})+area(r,'description','Popis a současný stav')+area(r,'insight','Poznatky a možnosti rozšíření')+area(r,'source','Zdroj a datum ověření'),true);
   }else if(task){
     const source=records.get(r.meetingId);
+    const taskAreas=[...new Set([r.category,...projectAreas,...categories])].filter(category=>category&&canOpen(taskSection(category,r.meetingId)));
     fields=(source?'<p class="help">Ze schůzky '+esc(source.title)+' · '+esc(dateText(source.date))+'</p>':'')+
-      group('Zadání a plán',requiredTitle+input(r,'category','Oblast',{values:[...projectAreas,...categories],required:true})+
+      group('Zadání a plán',requiredTitle+input(r,'category','Oblast',{values:taskAreas,required:true})+
       workflow+tagField(r)+input(r,'product','Produkt / výstup',{wide:true})+area(r,'description','Popis úkolu a výstupu')+area(r,'check','Jak ověříme splnění')+area(r,'notes','Poznámky'),true);
   }else{
     fields=group('Stránka a stav',requiredTitle+input(r,'type','Typ stránky',{values:types,required:true})+
@@ -658,7 +684,7 @@ function editor(record,defaultType,meetingId){
       showError('Zápis má navázané úkoly v roadmapě. Ponechte jej jako zdroj těchto úkolů.');
       return;
     }
-    if(confirm('Smazat položku „'+r.title+'“?')) persist(r.id,revision,null,true);
+    if(confirm('Smazat položku „'+r.title+'“?')) persist(r.id,revision,{kind:r.kind,category:r.category,meetingId:r.meetingId},true);
   });
   dialog.showModal();
   previews();

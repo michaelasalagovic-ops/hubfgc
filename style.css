@@ -108,6 +108,10 @@ dialog[open]{animation:dialog-appear .18s ease-out}
   #notifications{top:135px}
 }
 @supports (top:anchor(bottom)){#notifications{top:calc(anchor(bottom) + 7px)}}
+.section-access{min-width:155px}
+.section-access fieldset{display:grid;gap:4px;margin:0 0 8px;padding:0;border:0}
+.section-access legend{margin:0 0 5px;font-size:.82rem;font-weight:700}
+.section-access label{display:flex;gap:6px;align-items:center;white-space:nowrap}
 @media(prefers-reduced-motion:reduce){
   .hero-art:not(.ready) .arches,dialog[open]{animation:none}
   .hero-art canvas,.btn,.ticket,.lane,.card{transition:none}

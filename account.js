@@ -4,6 +4,13 @@ let session=JSON.parse(sessionStorage.getItem('fcg-session')||'null');
 let refreshing;
 export let isAdmin=false;
 export let canWrite=false;
+export const sectionLabels={roadmapa:'Roadmapa',meetingy:'Meetingy',dokumenty:'Dokumenty',web:'Web',strategie:'Značka a nabídka'};
+export let allowedSections=[];
+export async function refreshSections(){
+  const response=await api('/rest/v1/rpc/fcg_my_sections',{method:'POST'});
+  if(!response.ok)throw Error('Oprávnění k sekcím se nepodařilo načíst.');
+  allowedSections=await response.json();
+}
 export const currentUserId=()=>session?.user?.id;
 export const currentUserEmail=()=>session?.user?.email;
 
@@ -57,6 +64,7 @@ async function role(){
   if(!admin.ok||!write.ok)throw Error('Oprávnění se nepodařilo načíst.');
   isAdmin=await admin.json();
   canWrite=await write.json();
+  await refreshSections();
 }
 function showPasswordReset(accessToken){
   document.querySelector('#sync').textContent='Obnova hesla';
@@ -190,7 +198,7 @@ export function accountPanel(){
   return '<div class="heading"><div><h1>Správa účtu</h1><p>Vaše role v HUBu: <strong>'+roleLabels[isAdmin?'admin':canWrite?'editor':'reader']+'</strong></p></div></div>'+
     '<form class="form-grid panel account-name" data-display-name><label class="field">Zobrazované jméno v HUBu<input name="displayName" type="text" maxlength="60" required></label><button type="submit" class="btn">Uložit jméno</button><small class="wide" data-name-hint></small><p class="wide" role="status" data-name-status></p></form>'+
     '<form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
-    (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
+    (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Povolené sekce</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
     '<form class="form-grid panel" data-member aria-labelledby="create-member-title"><h3 class="wide" id="create-member-title">Nový přihlašovací účet</h3>'+
     '<label class="field">E-mail kolegy<input name="email" type="email" maxlength="254" required></label>'+
     '<div class="field"><label for="member-password">Počáteční heslo (alespoň 12 znaků)</label>'+
@@ -249,10 +257,53 @@ export async function bindAccount(){
     toggle.title=visible?'Skrýt heslo':'Zobrazit heslo';
   }
   toggle.onclick=()=>showPassword(password.type==='password');
+  function sectionPicker(cell,address,assigned){
+    const group=document.createElement('fieldset');
+    const legend=document.createElement('legend');legend.textContent='Přístup k sekcím';
+    group.append(legend);
+    const boxes=Object.entries(sectionLabels).map(([key,name])=>{
+      const label=document.createElement('label');
+      const check=document.createElement('input');
+      check.type='checkbox';check.value=key;check.checked=assigned.includes(key);
+      label.append(check,' '+name);group.append(label);
+      return check;
+    });
+    const save=document.createElement('button');
+    save.type='button';save.className='btn';save.textContent='Uložit sekce';save.disabled=true;
+    const same=()=>boxes.every(check=>check.checked===assigned.includes(check.value));
+    group.onchange=()=>{save.disabled=same();};
+    save.onclick=async()=>{
+      if(save.disabled)return;
+      const next=boxes.filter(check=>check.checked).map(check=>check.value);
+      save.disabled=group.disabled=true;
+      try{
+        const path='/rest/v1/fcg_members?email=eq.'+encodeURIComponent(address)+
+          '&sections=eq.'+encodeURIComponent('{'+assigned.join(',')+'}');
+        const response=await api(path,{method:'PATCH',headers:{'Content-Type':'application/json',Prefer:'return=representation'},
+          body:JSON.stringify({sections:next})});
+        if(!response.ok)throw Error('Sekce se nepodařilo uložit.');
+        const [updated]=await response.json();
+        if(!updated){
+          await refresh();
+          status.textContent='Oprávnění se mezitím změnila. Zkontrolujte aktuální nastavení sekcí.';
+          return;
+        }
+        assigned=updated.sections;
+        status.textContent='Sekce uloženy pro '+address+'.';
+      }catch(error){status.textContent=error.message;}
+      finally{group.disabled=false;save.disabled=same();}
+    };
+    cell.append(group,save);
+  }
   async function refresh(){
-    const r=await api('/rest/v1/rpc/fcg_list_members',{method:'POST'});
-    if(!r.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
-    const rows=await r.json();list.replaceChildren();
+    const [r,access]=await Promise.all([
+      api('/rest/v1/rpc/fcg_list_members',{method:'POST'}),
+      api('/rest/v1/fcg_members?select=email,sections')
+    ]);
+    if(!r.ok||!access.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
+    const rows=await r.json();
+    const byEmail=new Map((await access.json()).map(row=>[row.email,row.sections]));
+    list.replaceChildren();
     for(const row of rows){
       const tr=list.insertRow();
       const own=row.email===session.user?.email?.toLowerCase();
@@ -260,6 +311,10 @@ export async function bindAccount(){
       const roleCell=tr.insertCell();
       roleCell.textContent=roleLabels[row.role];
       tr.insertCell().textContent=row.has_account?'Založený':'Chybí účet';
+      const accessCell=tr.insertCell();
+      accessCell.className='section-access';
+      if(row.role==='admin')accessCell.textContent='Všechny sekce';
+      else if(byEmail.has(row.email))sectionPicker(accessCell,row.email,byEmail.get(row.email));
       const actions=tr.insertCell();
       if(own){actions.textContent='Vlastní účet';continue;}
       const field=document.createElement('label');field.className='field';
