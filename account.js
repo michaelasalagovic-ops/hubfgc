@@ -176,7 +176,11 @@ export async function fileUrl(path){
 export function accountPanel(){
   return '<h1>Správa účtu</h1><p>Vaše role v HUBu: <strong>'+roleLabels[isAdmin?'admin':canWrite?'editor':'reader']+'</strong></p>'+
     '<form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
-    (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div><form class="form-grid panel" data-member><label class="field">E-mail kolegy<input name="email" required type="email"></label><label class="field">Počáteční heslo pro nový účet<input name="password" type="password" minlength="12" autocomplete="new-password"></label><button class="btn primary">Povolit zápis</button></form>':'')+
+    (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
+    '<form class="form-grid panel" data-member aria-labelledby="create-member-title"><h3 class="wide" id="create-member-title">Nový přihlašovací účet</h3>'+
+    '<label class="field">E-mail kolegy<input name="email" type="email" maxlength="254" required></label>'+
+    '<label class="field">Počáteční heslo (alespoň 12 znaků)<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>'+
+    '<div class="actions wide"><button type="submit" class="btn primary">Založit účet v HUBu</button></div></form>':'')+
     '<p role="status" data-account-status></p><button class="btn" data-signout>Odhlásit se</button>';
 }
 export async function bindAccount(){
@@ -188,6 +192,10 @@ export async function bindAccount(){
   };
   if(!isAdmin)return;
   const list=main.querySelector('[data-members]');
+  const memberForm=main.querySelector('[data-member]');
+  const email=memberForm.elements.email;
+  const password=memberForm.elements.password;
+  const create=memberForm.querySelector('button[type=submit]');
   async function refresh(){
     const r=await api('/rest/v1/rpc/fcg_list_members',{method:'POST'});
     if(!r.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
@@ -218,6 +226,20 @@ export async function bindAccount(){
       const buttons=document.createElement('div');
       buttons.className='actions';buttons.append(save);
       if(row.role!=='admin')buttons.append(remove);
+      if(!row.has_account){
+        const activate=document.createElement('button');
+        activate.type='button';
+        activate.className='btn';
+        activate.textContent='Založit účet';
+        activate.setAttribute('aria-label','Založit účet pro '+row.email);
+        activate.onclick=()=>{
+          if(create.disabled)return;
+          if(email.value.trim().toLowerCase()!==row.email)password.value='';
+          email.value=row.email;
+          password.focus();
+        };
+        buttons.prepend(activate);
+      }
       actions.append(buttons);
       roleCell.append(field);
       select.onchange=()=>{save.disabled=select.value===row.role;};
@@ -252,14 +274,30 @@ export async function bindAccount(){
         finally{select.disabled=remove.disabled=false;save.disabled=select.value===row.role;}
       };
     }
+    return rows;
   }
-  main.querySelector('[data-member]').onsubmit=async e=>{
-    e.preventDefault();const form=e.currentTarget,button=form.querySelector('button');button.disabled=true;
+  memberForm.onsubmit=async e=>{
+    e.preventDefault();
+    if(create.disabled||!memberForm.reportValidity())return;
+    const address=email.value.trim().toLowerCase();
+    create.disabled=email.readOnly=password.readOnly=true;
+    status.textContent='Zakládám přihlašovací účet…';
     try{
-      const r=await api('/functions/v1/fcg-member',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:form.email.value.trim(),password:form.password.value})});
-      if(!r.ok)throw Error((await r.json()).error||'Změna se nepodařila.');
-      form.reset();await refresh();status.textContent='Přístup uložen. U nového účtu předejte kolegovi počáteční heslo soukromě.';
-    }catch(err){status.textContent=err.message;}finally{button.disabled=false;}
+      const r=await api('/functions/v1/fcg-member',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email:address,password:password.value})
+      });
+      if(!r.ok){
+        const result=await r.json().catch(()=>null);
+        throw Error(result?.error||'Účet se nepodařilo založit.');
+      }
+      memberForm.reset();
+      const users=await refresh().catch(()=>null);
+      status.textContent=users?.some(user=>user.email===address&&user.has_account)
+        ?'Přihlašovací účet pro '+address+' je připravený. Počáteční heslo k novému účtu předejte soukromě.'
+        :'Požadavek byl uložen. Stav účtu ověřte po obnovení seznamu uživatelů.';
+    }catch(err){status.textContent=err.message;}
+    finally{create.disabled=email.readOnly=password.readOnly=false;}
   };
   try{await refresh();}catch{status.textContent='Seznam uživatelů se nepodařilo načíst.';}
 }
