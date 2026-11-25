@@ -36,8 +36,13 @@ function recordSection(record){
 }
 const records=new Map();
 const versions=new Map();
+const documentRoots=[
+  {id:'folder-web',title:'WEB',folderId:''},
+  {id:'folder-brand',title:'BRAND',folderId:''}
+];
+const brandDocuments=new Set(['doc-brand-book','doc-linkedin-manual','doc-manual-loga','doc-strategie']);
 const filters={q:'',type:'',service:'',audience:'',status:'',priority:''};
-let view='prehled', mapMode='tree', ready=false, loading=true, toastTimer;
+let view='prehled', mapMode='tree', folderView='', ready=false, loading=true, toastTimer;
 const main=document.querySelector('#main');
 const dialog=document.querySelector('#editor');
 const settingsLink=document.querySelector('#settings-link');
@@ -312,14 +317,46 @@ function roadmap(){
     '<div class="road-tools"><div class="actions">'+control('Podle stavu','board')+control('Časová osa','time')+'</div><div class="actions"><select aria-label="Oblast úkolů" data-road-filter="area">'+options(uniq(tasks.map(r=>r.category)),areaFilter,'Všechny oblasti')+'</select><select aria-label="Držitel úkolu" data-road-filter="owner">'+options(owners,ownerFilter,'Všichni držitelé')+'</select><select aria-label="Štítek úkolu" data-road-filter="tag">'+options(tags,tagFilter,'Všechny štítky')+'</select></div></div>'+
     (roadMode==='board'&&canWrite?'<p class="boardhelp">Kartu přetáhněte do dalšího sloupce nebo otevřete úkol a změňte stav.</p>':'')+result;
 }
+function documentFolders(){
+  return new Map([...documentRoots,...[...records.values()].filter(r=>r.kind==='document'&&r.isFolder===true)].map(folder=>[folder.id,folder]));
+}
+function folderPath(id,folders){
+  const path=[];
+  const visited=new Set();
+  while(id&&folders.has(id)&&!visited.has(id)){
+    visited.add(id);
+    const folder=folders.get(id);
+    path.unshift(folder);
+    id=folder.folderId;
+  }
+  return path;
+}
+const folderHref=id=>'#dokumenty'+(id?'/'+encodeURIComponent(id):'');
+function documentParent(record,folders){
+  const id=Object.hasOwn(record,'folderId')?record.folderId:brandDocuments.has(record.id)?'folder-brand':'';
+  return folders.has(id)?id:'';
+}
 function documentList(){
-  const items=[...records.values()].filter(r=>r.kind==='document');
-  return heading('Dokumenty',sections.dokumenty[2],action('+ Přidat dokument','data-new="document"','primary'))+
-    (items.length?'<div class="cards">'+items.map(r=>'<article class="card"><h2>'+esc(r.title)+'</h2><p>'+esc(r.description)+'</p><div class="actions">'+
+  const folders=documentFolders();
+  if(folderView&&!folders.has(folderView)){
+    folderView='';
+    history.replaceState(null,'',folderHref(''));
+  }
+  const trail=folderPath(folderView,folders);
+  const current=folders.get(folderView);
+  const children=[...folders.values()].filter(folder=>documentParent(folder,folders)===folderView);
+  const items=[...records.values()].filter(r=>r.kind==='document'&&!r.isFolder&&documentParent(r,folders)===folderView);
+  const folderCards=children.map(folder=>'<article class="card document-folder"><h2><a href="'+folderHref(folder.id)+'"><span class="folder-icon" aria-hidden="true"></span>'+esc(folder.title)+'</a></h2>'+
+    (folder.isFolder&&canWrite?action('Přejmenovat',editAttr(folder.id)):'')+'</article>').join('');
+  const breadcrumbs=current?'<nav class="document-path" aria-label="Umístění dokumentů"><a href="'+folderHref('')+'">Dokumenty</a>'+
+    trail.map(folder=>folder.id===folderView?'<span aria-current="page">'+esc(folder.title)+'</span>':'<a href="'+folderHref(folder.id)+'">'+esc(folder.title)+'</a>').join('')+'</nav>':'';
+  return heading(current?.title||'Dokumenty',current?'Dokumenty a podsložky':sections.dokumenty[2],
+    action('+ Nová složka','data-new="document-folder"','primary')+action('+ Přidat dokument','data-new="document"'))+breadcrumbs+
+    (children.length||items.length?'<div class="cards">'+folderCards+items.map(r=>'<article class="card"><h2>'+esc(r.title)+'</h2><p>'+esc(r.description)+'</p><div class="actions">'+
       (r.files||[]).filter(f=>/^\/api\/documents\/[a-z0-9-]+\.(pdf|docx|pptx|xlsx)$/.test(f.path)).map(f=>{
         const ext=f.path.split('.').pop();
         return '<a class="btn" href="#dokumenty" data-hub-file="'+esc(f.path)+'" '+(ext==='pdf'?'target="_blank" rel="noopener"':'download="'+esc(f.name)+'"')+'>'+esc(ext==='pdf'?'Otevřít PDF':'Stáhnout '+ext.toUpperCase())+'</a>';
-      }).join('')+action(canWrite?'Upravit':'Otevřít kartu',editAttr(r.id))+'</div></article>').join('')+'</div>':noResults('Zatím tu nejsou žádné dokumenty.'));
+      }).join('')+action(canWrite?'Upravit':'Otevřít kartu',editAttr(r.id))+'</div></article>').join('')+'</div>':noResults('Tato složka je zatím prázdná.'));
 }
 function meetings(){
   const list=[...records.values()].filter(r=>r.kind==='meeting').sort((a,b)=>b.date.localeCompare(a.date)||a.title.localeCompare(b.title,'cs'));
@@ -414,7 +451,10 @@ function render(){
   if(!ready&&!loading) main.insertAdjacentHTML('afterbegin','<p class="error">Zobrazeny dostupné podklady. Pro úpravy obnovte připojení. '+action('Zkusit znovu','data-retry','link')+'</p>');
 }
 function route(){
-  const section=location.hash.slice(1);
+  const hash=location.hash.slice(1);
+  const documentRoute=hash.match(/^dokumenty\/([a-zA-Z0-9-]{1,80})$/);
+  const section=documentRoute?'dokumenty':hash;
+  folderView=documentRoute?.[1]||'';
   view=Object.hasOwn(sections,section)?section:firstView();
   render();
   if(ready)refreshMembers().then(renderNotifications);
@@ -490,13 +530,14 @@ function descendantOf(page,ancestor){
 function editor(record,defaultType,meetingId){
   if(!canWrite&&!record)return;
   if(!ready){flash('Pro úpravy je potřeba obnovit připojení.');return;}
-  const doc=record?.kind==='document'||defaultType==='document';
+  const folder=record?.isFolder===true||defaultType==='document-folder';
+  const doc=record?.kind==='document'||defaultType==='document'||folder;
   const meeting=record?.kind==='meeting'||defaultType==='meeting';
   const note=record?.kind==='note'||defaultType==='note';
   const task=record?.kind==='task'||['task','measurement','project'].includes(defaultType);
   const today=new Date();
   const localDate=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
-  const r=record??(doc?{kind:'document',id:crypto.randomUUID(),title:'',files:[]}:meeting?{kind:'meeting',id:crypto.randomUUID(),date:localDate,title:'',notes:''}:{id:crypto.randomUUID(),title:'',type:defaultType==='video'?'Video':defaultType==='local'?'Lokální SEO':'Obsah',
+  const r=record??(doc?{kind:'document',id:crypto.randomUUID(),title:'',folderId:folderView,...(folder?{isFolder:true}:{files:[]})}:meeting?{kind:'meeting',id:crypto.randomUUID(),date:localDate,title:'',notes:''}:{id:crypto.randomUUID(),title:'',type:defaultType==='video'?'Video':defaultType==='local'?'Lokální SEO':'Obsah',
     service:defaultType==='video'?'Koučink':'',parent:defaultType==='video'?'videos':defaultType==='local'?'branches':'',
     category:defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{})}:{links:[]})});
   if(!canOpen(recordSection(r)))return;
@@ -505,8 +546,14 @@ function editor(record,defaultType,meetingId){
     input(r,'status','Stav',{values:statuses,required:true})+input(r,'priority','Priorita',{values:priorities,required:true});
   const requiredTitle=input(r,'title',task?'Název úkolu':'Název stránky',{wide:true,required:true});
   let fields;
-  if(doc){
+  if(folder){
+    fields=group('Složka',input(r,'title','Název složky',{required:true,wide:true}),true);
+  }else if(doc){
+    const folders=documentFolders();
+    const choices=[...folders.values()].map(item=>({value:item.id,label:folderPath(item.id,folders).map(part=>part.title).join(' / ')}))
+      .sort((a,b)=>a.label.localeCompare(b.label,'cs'));
     fields=group('Dokument',input(r,'title','Název dokumentu',{required:true,wide:true})+area(r,'description','Krátký popis')+
+      '<label class="field wide">Složka<select name="folderId">'+options(choices,documentParent(r,folders),'Dokumenty (hlavní úroveň)')+'</select></label>'+
       '<label class="field wide">'+(record?'Přidat další soubor':'Soubor')+'<input name="docFile" type="file" accept=".pdf,.docx,.pptx,.xlsx" '+(record?'':'required')+'></label><small class="wide">PDF, DOCX, PPTX nebo XLSX do 20 MB.</small>',true);
   }else if(meeting){
     fields=group('Zápis ze schůzky',input(r,'date','Datum schůzky',{type:'date',required:true})+
@@ -544,9 +591,9 @@ function editor(record,defaultType,meetingId){
       group('Ověřené a otevřené informace',area(r,'verified','Ověřené informace a zdroj')+
         area(r,'open','Otevřené informace k ověření')+area(r,'notes','Poznámky'),true);
   }
-  dialog.innerHTML='<form id="record-form"><header class="dialog-head"><h2 id="editor-title">'+esc(record?r.title:doc?'Nový dokument':meeting?'Nový zápis':note?'Nový podklad':task?'Nový úkol':'Nová stránka')+'</h2>'+
+  dialog.innerHTML='<form id="record-form"><header class="dialog-head"><h2 id="editor-title">'+esc(record?r.title:folder?'Nová složka':doc?'Nový dokument':meeting?'Nový zápis':note?'Nový podklad':task?'Nový úkol':'Nová stránka')+'</h2>'+
     action('Zavřít','data-close')+'</header><div class="dialog-body">'+fields+'</div>'+
-    '<footer class="dialog-foot"><div>'+(record&&isAdmin?action('Smazat','data-delete','danger'):'')+'</div>'+
+    '<footer class="dialog-foot"><div>'+(record&&isAdmin&&!folder?action('Smazat','data-delete','danger'):'')+'</div>'+
     '<div>'+action('Zrušit','data-close')+(meeting?'<button class="btn" type="submit" data-save-and-add>Uložit a přidat úkol</button>':'')+'<button type="submit" class="btn primary">Uložit</button></div></footer></form>';
   const form=dialog.querySelector('form');
   const previews=()=>{
@@ -603,8 +650,15 @@ function editor(record,defaultType,meetingId){
     const blockFields=new Set([...contentKeys,'docFile','imageFile','uploadedImage']);
     const pageFields=[...fd].filter(([key])=>!['links','ownerChoice','customOwner'].includes(key)&&!blockFields.has(key));
     const update={...r,...Object.fromEntries(pageFields.map(([key,value])=>[key,value.trim()]))};
+    if(folder){
+      if(!update.title){showError('Doplňte název složky.');return;}
+      if(update.folderId&&!documentFolders().has(update.folderId)){showError('Nadřazená složka už není dostupná.');return;}
+      await persist(r.id,revision,update,false);
+      return;
+    }
     if(doc){
       if(!update.title){showError('Doplňte název dokumentu.');return;}
+      if(update.folderId&&!documentFolders().has(update.folderId)){showError('Vybraná složka už není dostupná.');return;}
       const file=form.elements.docFile.files[0];
       const controls=[...form.elements].filter(el=>!el.disabled);
       controls.forEach(el=>el.disabled=true);
