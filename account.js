@@ -39,15 +39,71 @@ async function role(){
   if(!admin.ok)throw Error('Oprávnění se nepodařilo načíst.');
   isAdmin=await admin.json();
 }
+function showPasswordReset(accessToken){
+  document.querySelector('#sync').textContent='Obnova hesla';
+  main.innerHTML='<form class="panel form-grid"><h2 class="wide">Nastavit nové heslo</h2><label class="field">Nové heslo<input type="password" name="password" required minlength="12" autocomplete="new-password"></label><div class="actions wide"><button type="submit" class="btn primary">Uložit nové heslo</button><a class="btn" href="./">Zpět k přihlášení</a></div><p class="wide" role="status" aria-live="polite"></p></form>';
+  const form=main.querySelector('form');
+  const button=form.querySelector('button');
+  const status=form.querySelector('[role=status]');
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    button.disabled=true;
+    try{
+      const response=await fetch(endpoint+'/auth/v1/user',{
+        method:'PUT',headers:{apikey,Authorization:'Bearer '+accessToken,'Content-Type':'application/json'},
+        body:JSON.stringify({password:form.elements.password.value})
+      });
+      if(response.status===401||response.status===403)throw Error('Odkaz vypršel. Vyžádejte si nový odkaz k obnově.');
+      if(!response.ok)throw Error('Heslo se nepodařilo uložit. Zvolte nové heslo o alespoň 12 znacích.');
+      await auth('logout?scope=local',{},accessToken).catch(()=>{});
+      form.reset();
+      location.replace(location.pathname+'?heslo=ulozeno');
+    }catch(error){
+      status.textContent=error.message;
+    }finally{
+      button.disabled=false;
+    }
+  };
+}
 export async function start(){
-  let message='';
+  const fragment=new URLSearchParams(location.hash.slice(1));
+  const recoveryToken=fragment.get('type')==='recovery'&&fragment.get('access_token');
+  const recoveryError=fragment.has('error_code');
+  if(recoveryToken||recoveryError||fragment.has('access_token')){
+    history.replaceState(null,'',location.pathname+location.search);
+  }
+  if(recoveryToken){
+    sessionStorage.removeItem('fcg-session');
+    showPasswordReset(recoveryToken);
+    return new Promise(()=>{});
+  }
+  let message=recoveryError?'Odkaz je neplatný nebo vypršel. Vyžádejte si nový odkaz.':
+    new URLSearchParams(location.search).get('heslo')==='ulozeno'?'Heslo bylo změněno. Přihlaste se novým heslem.':'';
+  if(message&&location.search)history.replaceState(null,'',location.pathname);
   if(session){
     try{await role();return;}catch(error){message=error.message;sessionStorage.removeItem('fcg-session');session=null;}
   }
   document.querySelector('#sync').textContent='Přihlášení';
-  main.innerHTML='<div class="heading"><h1>FyzioGym Cooper</h1></div><form class="panel form-grid" id="login"><h2 class="wide">Přihlášení do hubu</h2><label class="field">E-mail<input required type="email" name="email" autocomplete="username"></label><label class="field">Heslo do hubu<input required type="password" name="password" autocomplete="current-password"></label><div class="actions wide"><button class="btn primary">Přihlásit</button></div><small class="wide">Přístup pro kolegy zakládá správce FCG.</small><p role="status" class="wide"></p></form>';
+  main.innerHTML='<div class="heading"><h1>FyzioGym Cooper</h1></div><form class="panel form-grid" id="login"><h2 class="wide">Přihlášení do hubu</h2><label class="field">E-mail<input required type="email" name="email" autocomplete="username"></label><label class="field">Heslo do hubu<input required type="password" name="password" autocomplete="current-password"></label><div class="actions wide"><button class="btn primary">Přihlásit</button><button type="button" class="btn" data-recover>Zapomenuté heslo</button></div><small class="wide">Přístup pro kolegy zakládá správce FCG.</small><p role="status" class="wide"></p></form>';
   const form=main.querySelector('form'),status=form.querySelector('[role=status]');
   status.textContent=message;
+  const reset=form.querySelector('[data-recover]');
+  reset.onclick=async()=>{
+    const email=form.elements.email;
+    if(!email.reportValidity())return;
+    reset.disabled=true;
+    try{
+      const redirect=location.origin+location.pathname;
+      const response=await auth('recover?redirect_to='+encodeURIComponent(redirect),{email:email.value.trim()});
+      if(response.status===429)throw Error('Odkaz nyní nelze odeslat kvůli limitu. Zkuste to později.');
+      if(!response.ok)throw Error('Obnovu hesla se nepodařilo spustit. Zkuste to prosím později.');
+      status.textContent='Pokud je pro tuto adresu obnova dostupná, přijde vám e-mail s odkazem.';
+    }catch(error){
+      status.textContent=error.message;
+    }finally{
+      reset.disabled=false;
+    }
+  };
   await new Promise(resolve=>form.onsubmit=async event=>{
     event.preventDefault();form.querySelector('button').disabled=true;
     try{
