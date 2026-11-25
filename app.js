@@ -1,4 +1,4 @@
-import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-10';
+import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-11';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -35,9 +35,9 @@ const canOpen=id=>{
   return allowedSections.includes(webViews.includes(id)?'web':id);
 };
 const firstView=()=>['prace','ucet','bez-pristupu'].find(canOpen);
-const taskSection=(category,meetingId)=>meetingId?'meetingy':categories.includes(category)?'web':'roadmapa';
+const taskSection=(category,meetingId,socialId)=>socialId?'some':meetingId?'meetingy':categories.includes(category)?'web':'roadmapa';
 function recordSection(record){
-  if(record.kind==='task')return taskSection(record.category,record.meetingId);
+  if(record.kind==='task')return taskSection(record.category,record.meetingId,record.socialId);
   return {meeting:'meetingy',document:'dokumenty',note:'strategie',social:'some'}[record.kind]||'web';
 }
 const records=new Map();
@@ -61,6 +61,7 @@ const bell=document.querySelector('#notification-button');
 const notifications=document.querySelector('#notifications');
 let members=[],membersReady=false,motionStarted=false;
 let assigneeEmails=new Map();
+let socialReviewers=[];
 const esc=(value='')=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uniq=list=>[...new Set(list.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'cs'));
 const isDone=r=>['Publikováno','Hotovo'].includes(r.status);
@@ -207,7 +208,8 @@ function taskOwner(task){
 function ownerField(task){
   const member=members.find(row=>row.user_id===assignedMemberId(task));
   const useOther=!member&&Boolean(task.owner||task.ownerId);
-  const choices=members.map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}))
+  const choices=members.filter(row=>!task.socialId||task.publicationTask||socialReviewers.includes(row.user_id)||row.user_id===member?.user_id)
+    .map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}))
     .sort((a,b)=>a.label.localeCompare(b.label,'cs'));
   const choice=member?.user_id||(useOther?otherOwner:'');
   return '<label class="field">Držitel úkolu<select name="ownerChoice">'+options([...choices,{value:otherOwner,label:'Jiné'}],choice,'Bez přiřazení')+'</select></label>'+
@@ -293,7 +295,7 @@ function filterChoices(values,emptyLabel){
   return [{value:'empty',label:emptyLabel},...uniq(values).map(label=>({value:'value:'+normalized(label),label})).filter((item,i,all)=>all.findIndex(x=>x.value===item.value)===i)];
 }
 function taskTile(r){
-  return '<article class="ticket" draggable="'+(ready&&canWrite)+'" data-ticket="'+esc(r.id)+'"><small>'+esc(r.category)+'</small><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button>'+
+  return '<article class="ticket" draggable="'+(ready&&canWrite&&!r.publicationTask)+'" data-ticket="'+esc(r.id)+'"><small>'+esc(r.category)+'</small><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button>'+
     '<div class="badges flex flex-wrap gap-2">'+priorityBadge(r)+'</div>'+tagBadges(r)+(r.product?'<p>'+esc(r.product)+'</p>':'')+
     '<footer><span>'+esc(taskOwner(r)||'Bez přiřazení')+'</span><time>'+esc(dateText(r.date)||'Bez termínu')+'</time></footer></article>';
 }
@@ -311,13 +313,14 @@ function taskList(tasks,editable=false){
     const id=esc(task.id);
     const memberId=assignedMemberId(task);
     const member=members.some(row=>row.user_id===memberId)?memberId:'';
-    const ownerChoices=members.map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}));
+    const ownerChoices=members.filter(row=>!task.socialId||socialReviewers.includes(row.user_id)||row.user_id===member)
+      .map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}));
     const custom=!member&&taskOwner(task);
     if(custom)ownerChoices.unshift({value:otherOwner,label:custom});
     const quickAttr=field=>'data-quick-task="'+id+'" data-quick-field="'+field+'"';
     const quickLabel=field=>' aria-label="'+field+' · '+label+'"';
     return '<article class="work-row" data-work-row="'+id+'"><div><button type="button" class="item-title" '+editAttr(task.id)+'>'+label+'</button><small>'+esc(task.category)+'</small></div>'+
-      (editable?
+      (editable&&!task.publicationTask?
         '<select '+quickAttr('status')+quickLabel('Stav')+'>'+options([...new Set([task.status,...statuses])].filter(Boolean),task.status,null)+'</select>'+
         '<select '+quickAttr('owner')+quickLabel('Držitel úkolu')+(membersReady?'':' disabled')+'>'+options(ownerChoices,member||(custom?otherOwner:''),'Bez držitele')+'</select>'+
         '<input type="date" '+quickAttr('date')+quickLabel('Termín')+' value="'+esc(task.date)+'">' :
@@ -339,8 +342,13 @@ function myWork(){
   ];
   if(isAdmin)groups.push(['Týmové úkoly bez držitele',active.filter(task=>!assignedMemberId(task)&&!taskOwner(task))]);
   const pilot=canOpen('web')&&records.get('assessment');
+  const socialWork=[...records.values()].filter(r=>r.kind==='social'&&userId&&(
+    (r.review?.state==='pending'&&r.review.reviewerId===userId)||(r.review?.state==='returned'&&r.review.requestedBy===userId)));
   return heading('Moje práce',sections.prace[2])+
     (pilot?'<section class="panel work-pilot"><div><h2>Pilotní stránka · Vstupní vyšetření</h2><p class="fine">Podklady, odborná revize, publikace a kontrola výsledků.</p></div>'+action('Otevřít pilotní kartu',editAttr('assessment'))+'</section>':'')+
+    (socialWork.length?'<section class="panel work-group"><h2>Příspěvky SoMe '+badge(socialWork.length)+'</h2><div class="work-list">'+socialWork.sort(compareDue).map(r=>
+      '<article class="work-row"><div><button type="button" class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button><small>'+esc(socialChannels[r.channel])+'</small></div>'+
+      socialReviewBadge(r)+'<span>'+esc(dateText(r.date)||'Bez termínu')+'</span></article>').join('')+'</div></section>':'')+
     groups.map(([title,tasks])=>'<section class="panel work-group"><h2>'+title+' '+badge(tasks.length)+'</h2>'+taskList(tasks)+'</section>').join('');
 }
 function roadmap(){
@@ -402,12 +410,56 @@ function driveLinkFields(link={}){
     '<label class="field">Odkaz z Google Disku<input name="driveUrl" type="url" value="'+esc(link.url)+'" placeholder="https://drive.google.com/…"></label>'+
     action('Odebrat','data-remove-drive-link aria-label="Odebrat odkaz na Google Disk"')+'</div>';
 }
-function driveSection(record){
+function driveSection(record,editable=canWrite){
   const links=driveLinks(record);
-  if(!canWrite&&!links.length)return '';
+  if(!editable&&!links.length)return '';
   return '<section class="form-section drive-section"><h3>Google Disk</h3>'+driveAnchors(links)+
-    (canWrite?'<div data-drive-links>'+links.map(driveLinkFields).join('')+'</div>'+
+    (editable?'<div data-drive-links>'+links.map(driveLinkFields).join('')+'</div>'+
       action('+ Přidat odkaz','data-add-drive-link'):'')+'</section>';
+}
+const socialMedia=r=>(Array.isArray(r.media)?r.media:[]).filter(file=>/^\/api\/social\/[a-f0-9-]{36}\.(jpg|png|webp|mp4)$/.test(file?.path));
+const socialReviewLabels={pending:'Čeká na schválení',approved:'Schváleno k publikaci',returned:'Vráceno k úpravě',published:'Publikováno'};
+function socialMember(id){
+  const member=members.find(row=>row.user_id===id);
+  return member?memberLabel(member):'Schvalovatel';
+}
+function socialReviewBadge(r){
+  const state=r.review?.state;
+  if(!socialReviewLabels[state])return statusBadge(r);
+  return badge(socialReviewLabels[state],state==='returned'?'wait':state==='published'?'done':'progress');
+}
+function socialReviewDetails(r,editable){
+  const review=r.review;
+  const state=review?.state;
+  const canDecide=editable&&state==='pending'&&review.reviewerId===currentUserId();
+  const publicationTask=records.get('publish-'+r.id);
+  const canPublish=editable&&state==='approved'&&publicationTask?.ownerId===currentUserId();
+  const choices=members.filter(row=>socialReviewers.includes(row.user_id))
+    .map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}));
+  return '<section class="form-section drive-section social-review"><h3>Schválení a publikace</h3><div class="badges">'+socialReviewBadge(r)+'</div>'+
+    (state==='pending'?'<p>Čeká na <strong>'+esc(socialMember(review.reviewerId))+'</strong></p>':'')+
+    (state==='approved'&&publicationTask?'<p>Publikuje <strong>'+esc(socialMember(publicationTask.ownerId))+'</strong></p>':'')+
+    (review?.note?'<p class="social-copy"><strong>Poznámka ke schválení</strong> '+esc(review.note)+'</p>':'')+
+    (canDecide?area({},'decisionNote','Poznámka k rozhodnutí')+'<div class="actions">'+
+      '<button class="btn primary" type="button" data-social-action="approved">Schválit k publikaci</button>'+
+      '<button class="btn" type="button" data-social-action="returned">Vrátit k úpravě</button></div>':'')+
+    (canPublish?'<button class="btn primary" type="button" data-social-action="published">Označit jako publikované</button>':'')+
+    (editable&&!['pending','approved','published'].includes(state)&&r.status!=='Publikováno'?
+      '<label class="field">Schvaluje<select name="socialReviewer">'+options(choices,review?.reviewerId,'Vyberte schvalovatele')+'</select></label>'+
+      '<div class="actions"><button class="btn primary" type="button" data-social-action="pending">Poslat ke schválení</button></div>':'')+
+    '</section>';
+}
+function socialAttachments(r,editable){
+  const files=socialMedia(r);
+  return '<section class="form-section drive-section"><h3>Fotky a video</h3><div class="social-media">'+files.map(file=>{
+    const video=file.path.endsWith('.mp4');
+    return '<figure data-social-file="'+esc(file.path)+'">'+(video?
+      '<video controls preload="none" hidden></video>'+action('Načíst video','data-load-social-video'):
+      '<img data-hub-image="'+esc(file.path)+'" alt="'+esc(file.name)+'">')+
+      '<figcaption>'+esc(file.name)+'</figcaption><div class="actions"><a class="btn" href="#some" data-hub-file="'+esc(file.path)+'" download="'+esc(file.name)+'">Stáhnout</a>'+
+      (editable?action('Odebrat','data-remove-social-media aria-label="Odebrat '+esc(file.name)+'"'):'')+'</div></figure>';
+  }).join('')+'</div>'+(editable?'<label class="field">Přidat fotky nebo video<input name="socialFiles" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.mp4"></label>'+
+    '<small>JPG, PNG, WebP nebo MP4, do 20 MB na soubor. Větší soubory přidejte odkazem z Google Disku.</small>':'')+'</section>';
 }
 function social(){
   const materials=socialChannel==='podklady';
@@ -416,7 +468,9 @@ function social(){
   const tabs='<nav class="topicbar social-tabs" aria-label="Kategorie SoMe">'+Object.entries(socialChannels).map(([id,label])=>
     '<a class="btn'+(id===socialChannel?' primary':'')+'" href="'+socialHref(id)+'"'+(id===socialChannel?' aria-current="page"':'')+'>'+label+'</a>').join('')+'</nav>';
   const cards=items.map(r=>'<article class="card"><div><h2><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button></h2>'+
-    (materials?'':'<div class="badges">'+statusBadge(r)+(r.date?'<time datetime="'+esc(r.date)+'">'+dateText(r.date)+'</time>':'')+'</div>')+
+    (materials?'':'<div class="badges">'+socialReviewBadge(r)+(r.date?'<time datetime="'+esc(r.date)+'">Publikace '+dateText(r.date)+'</time>':'')+'</div>'+
+      (r.review?.state==='pending'?'<p class="fine">Čeká na '+esc(socialMember(r.review.reviewerId))+'</p>':'')+
+      (socialMedia(r).length?'<p class="fine">Přílohy ('+socialMedia(r).length+')</p>':''))+
     (r.description?'<p class="social-copy">'+esc(r.description)+'</p>':'')+'</div>'+driveAnchors(driveLinks(r))+'</article>');
   return heading('SoMe',sections.some[2],action(materials?'+ Přidat podklad':'+ Nový příspěvek','data-new="social"','primary'))+
     tabs+(items.length?'<div class="cards">'+cards.join('')+'</div>':noResults(materials?'Zatím tu nejsou žádné podklady.':'Zatím tu nejsou žádné příspěvky.'));
@@ -560,7 +614,7 @@ main.addEventListener('drop',async event=>{
   clearDrop();
   const status=event.target.closest('[data-drop]')?.dataset.drop;
   const r=records.get(event.dataTransfer.getData('text/plain'));
-  if(!canWrite||!ready||!status||r?.kind!=='task')return;
+  if(!canWrite||!ready||!status||r?.kind!=='task'||r.publicationTask)return;
   event.preventDefault();
   if(lanes.find(l=>l.states.includes(r.status))?.states[0]===status)return;
   await persist(r.id,versions.get(r.id)||0,{...r,status},false);
@@ -619,17 +673,18 @@ function flash(message){
   toastTimer=setTimeout(()=>toast.textContent='',3600);
 }
 async function refreshMembers(){
-  const [people,emails]=await Promise.allSettled([loadAssignees(),canWrite?loadAssigneeEmails():[]]);
+  const [people,emails,reviewers]=await Promise.allSettled([loadAssignees(),canWrite?loadAssigneeEmails():[],canWrite&&canOpen('some')?loadSocialReviewers():[]]);
   membersReady=people.status==='fulfilled';
   if(membersReady)members=people.value;
   assigneeEmails=new Map(emails.status==='fulfilled'?emails.value.map(row=>[row.user_id,row.email]):[]);
+  socialReviewers=reviewers.status==='fulfilled'?reviewers.value:[];
 }
 document.addEventListener('fcg-members-changed',()=>refreshMembers().then(renderNotifications));
 async function load(){
   loading=true;
   render();
   try{
-    const [data]=await Promise.all([loadRecords(),refreshMembers(),refreshSections()]);
+    const [data]=await Promise.all([loadRecords(),refreshSections().then(refreshMembers)]);
     records.clear();
     versions.clear();
     for(const row of data){
@@ -680,7 +735,7 @@ function descendantOf(page,ancestor){
   }
   return false;
 }
-function editor(record,defaultType,meetingId,pageId){
+function editor(record,defaultType,meetingId,pageId,socialId){
   if(!canWrite&&!record)return;
   if(!ready){flash('Pro úpravy je potřeba obnovit připojení.');return;}
   const folder=record?.isFolder===true||defaultType==='document-folder';
@@ -689,13 +744,15 @@ function editor(record,defaultType,meetingId,pageId){
   const note=record?.kind==='note'||defaultType==='note';
   const socialEntry=record?.kind==='social'||defaultType==='social';
   const materials=(record?.channel||socialChannel)==='podklady';
-  const task=record?.kind==='task'||['task','measurement','project'].includes(defaultType);
+  const task=record?.kind==='task'||['task','measurement','project','social-task'].includes(defaultType);
   const today=new Date();
   const localDate=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
   const r=record??(socialEntry?{kind:'social',id:crypto.randomUUID(),channel:socialChannel,title:'',status:'Návrh'}:doc?{kind:'document',id:crypto.randomUUID(),title:'',folderId:folderView,...(folder?{isFolder:true}:{files:[]})}:meeting?{kind:'meeting',id:crypto.randomUUID(),date:localDate,title:'',notes:''}:{id:crypto.randomUUID(),title:'',type:defaultType==='video'?'Video':defaultType==='local'?'Lokální SEO':'Obsah',
     service:defaultType==='video'?'Koučink':'',parent:defaultType==='video'?'videos':defaultType==='local'?'branches':'',
-    category:defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{}),...(pageId?{pageId}:{})}:{links:[]})});
+    category:socialId?'SoMe':defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{}),...(pageId?{pageId}:{}),...(socialId?{socialId}:{})}:{links:[]})});
   if(!canOpen(recordSection(r)))return;
+  const socialPost=socialEntry&&!materials;
+  const editable=canWrite&&!r.publicationTask&&!(socialPost&&r.review?.state==='published');
   const pageChoices=listed().filter(p=>p.id!==r.id).map(p=>({value:p.id,label:p.title}));
   const workflow=(task?ownerField(r):input(r,'owner','Vlastník'))+input(r,'date','Termín',{type:'date'})+
     input(r,'status','Stav',{values:statuses,required:true})+input(r,'priority','Priorita',{values:priorities,required:true});
@@ -717,20 +774,29 @@ function editor(record,defaultType,meetingId,pageId){
     fields=group('Podklad',input(r,'title','Název',{wide:true,required:true})+input(r,'category','Oblast',{values:topics,required:true})+area(r,'description','Popis a současný stav')+area(r,'insight','Poznatky a možnosti rozšíření')+area(r,'source','Zdroj a datum ověření'),true);
   }else if(socialEntry){
     const channels=Object.entries(socialChannels).filter(([id])=>id!=='podklady').map(([value,label])=>({value,label}));
-    fields=group(materials?'Podklad':'Příspěvek',input(r,'title','Název',{wide:true,required:true})+
-      (materials?'':input(r,'channel','Kanál',{values:channels,required:true})+input(r,'date','Plánované datum publikace',{type:'date'})+
-        input(r,'status','Stav',{values:statuses,required:true}))+area(r,'description',materials?'Popis podkladu':'Text příspěvku'),true);
+    fields=group(materials?'Podklad':'Draft příspěvku',input(r,'title','Název',{wide:true,required:true})+
+      (materials?'':input(r,'channel','Kanál',{values:channels,required:true})+input(r,'date','Navrhovaný termín publikace',{type:'date'}))+
+      area(r,'description',materials?'Popis podkladu':'Text příspěvku')+
+      (record&&!materials?'<div class="wide">'+action('Zkopírovat text','data-copy-social-text')+'</div>':''),true);
+    if(socialPost){
+      const linked=allTasks().filter(item=>item.socialId===r.id).sort(compareDue);
+      fields+=socialAttachments(r,editable)+driveSection(r,editable)+socialReviewDetails(r,editable)+
+        (record?'<section class="form-section linked-work"><h3>Navázané úkoly</h3>'+taskList(linked)+
+          (canWrite?action('+ Přidat úkol','data-new-social-task="'+esc(r.id)+'"'):'')+'</section>':'');
+    }
   }else if(task){
     const source=records.get(r.meetingId);
-    const taskAreas=[...new Set([r.category,...projectAreas,...categories])].filter(category=>category&&canOpen(taskSection(category,r.meetingId)));
+    const socialSource=records.get(r.socialId);
+    const taskAreas=r.socialId?['SoMe']:[...new Set([r.category,...projectAreas,...categories])].filter(category=>category&&canOpen(taskSection(category,r.meetingId)));
     const page=canOpen('web')&&records.get(r.pageId);
     const reviewerChoices=members.map(member=>({value:member.user_id,label:assigneeEmails.get(member.user_id)||memberLabel(member)}));
     if(r.reviewerId&&!members.some(member=>member.user_id===r.reviewerId)){
       reviewerChoices.push({value:r.reviewerId,label:'Dříve nastavený schvalovatel'});
     }
-    const relatedPage=canOpen('web')?'<label class="field">Související stránka<select name="pageId">'+
+    const relatedPage=!r.socialId&&canOpen('web')?'<label class="field">Související stránka<select name="pageId">'+
       options(listed().map(entry=>({value:entry.id,label:entry.title})),r.pageId,'Bez vazby')+'</select></label>':'';
-    fields=(source?'<p class="help">Ze schůzky '+esc(source.title)+' · '+esc(dateText(source.date))+'</p>':'')+
+    fields=(socialSource?'<div class="actions">'+action('Otevřít příspěvek '+socialSource.title,editAttr(socialSource.id))+'</div>':'')+
+      (source?'<p class="help">Ze schůzky '+esc(source.title)+' · '+esc(dateText(source.date))+'</p>':'')+
       (page?'<div class="actions">'+action('Otevřít stránku '+page.title,editAttr(page.id))+'</div>':'')+
       group('Zadání a plán',requiredTitle+input(r,'category','Oblast',{values:taskAreas,required:true})+
       workflow+'<label class="field">Schvaluje<select name="reviewerId">'+options(reviewerChoices,r.reviewerId,'Bez schvalovatele')+'</select></label>'+
@@ -766,29 +832,33 @@ function editor(record,defaultType,meetingId,pageId){
     fields='<section class="form-section linked-work"><h3>Související úkoly</h3>'+taskList(linked)+
       (canWrite?action('+ Přidat úkol','data-new-page-task="'+esc(r.id)+'"'):'')+'</section>'+fields;
   }
-  if(!folder)fields=driveSection(r)+fields;
+  if(!folder&&!socialPost)fields=driveSection(r,editable)+fields;
   dialog.innerHTML='<form id="record-form"><header class="dialog-head"><h2 id="editor-title">'+esc(record?r.title:folder?'Nová složka':doc?'Nový dokument':meeting?'Nový zápis':(note||(socialEntry&&materials))?'Nový podklad':socialEntry?'Nový příspěvek':task?'Nový úkol':'Nová stránka')+'</h2>'+
     action('Zavřít','data-close')+'</header><div class="dialog-body">'+fields+'</div>'+
     '<footer class="dialog-foot"><div>'+(record&&isAdmin&&!folder?action('Smazat','data-delete','danger'):'')+'</div>'+
-    '<div>'+action('Zrušit','data-close')+(meeting?'<button class="btn" type="submit" data-save-and-add>Uložit a přidat úkol</button>':'')+'<button type="submit" class="btn primary">Uložit</button></div></footer></form>';
+    '<div>'+action('Zrušit','data-close')+(meeting||socialPost?'<button class="btn" type="submit" data-save-and-add>Uložit a přidat úkol</button>':'')+'<button type="submit" class="btn primary">Uložit</button></div></footer></form>';
   const form=dialog.querySelector('form');
-  const initialEntries=[...new FormData(form)];
-  form.addEventListener('click',event=>{
-    if(!event.target.closest('[data-edit],[data-new-page-task]'))return;
-    const currentEntries=[...new FormData(form)];
+  const workflowEntries=()=>[...new FormData(form)].filter(([key])=>key!=='decisionNote');
+  const initialEntries=workflowEntries();
+  const isChanged=()=>{
+    const currentEntries=workflowEntries();
     const sameField=(a,b)=>typeof a==='string'?a===b:typeof b!=='string'&&a.name===b.name&&a.size===b.size&&(!a.name||a.lastModified===b.lastModified);
-    const changed=currentEntries.length!==initialEntries.length||
-      currentEntries.some(([key,value],index)=>key!==initialEntries[index][0]||!sameField(value,initialEntries[index][1]));
-    if(changed&&!confirm('Otevřít položku bez uložení rozepsaných změn?'))event.stopPropagation();
+    return currentEntries.length!==initialEntries.length||
+      currentEntries.some(([key,value],index)=>key!==initialEntries[index][0]||!sameField(value,initialEntries[index][1]))||
+      (socialPost&&form.querySelectorAll('[data-social-file]').length!==socialMedia(r).length);
+  };
+  form.addEventListener('click',event=>{
+    if(!event.target.closest('[data-edit],[data-new-page-task],[data-new-social-task]'))return;
+    if(isChanged()&&!confirm('Otevřít položku bez uložení rozepsaných změn?'))event.stopPropagation();
   });
   const previews=()=>{
     for(const img of dialog.querySelectorAll('[data-hub-image]'))fileUrl(img.dataset.hubImage).then(url=>img.src=url).catch(()=>flash('Obrázek se nepodařilo načíst.'));
   };
-  if(!canWrite){
+  if(!editable){
     form.querySelector('footer').remove();
     for(const element of form.querySelectorAll('.dialog-body input,.dialog-body select,.dialog-body textarea,.dialog-body button')){
       if(element.matches('button')){
-        if(!element.hasAttribute('data-edit'))element.remove();
+        if(!element.matches('[data-edit],[data-load-social-video],[data-new-social-task],[data-copy-social-text]'))element.remove();
         continue;
       }
       if(element.matches('input[type=file]'))element.closest('label').remove();
@@ -831,6 +901,12 @@ function editor(record,defaultType,meetingId,pageId){
       button.closest('.drive-link-row').remove();
       form.querySelector('[data-add-drive-link]').focus();
     }
+    if(button?.hasAttribute('data-remove-social-media'))button.closest('[data-social-file]').remove();
+    if(button?.dataset.socialAction){
+      form.dataset.socialAction=button.dataset.socialAction;
+      form.requestSubmit();
+      delete form.dataset.socialAction;
+    }
     const block=button?.closest('.content-block');
     if(button?.hasAttribute('data-remove-block')){
       block.remove();
@@ -844,7 +920,7 @@ function editor(record,defaultType,meetingId,pageId){
   form.addEventListener('submit',async event=>{
     event.preventDefault();
     const fd=new FormData(form);
-    const blockFields=new Set([...contentKeys,'docFile','imageFile','uploadedImage','driveTitle','driveUrl']);
+    const blockFields=new Set([...contentKeys,'docFile','imageFile','uploadedImage','driveTitle','driveUrl','socialFiles','socialReviewer','decisionNote']);
     const pageFields=[...fd].filter(([key])=>!['links','ownerChoice','customOwner'].includes(key)&&!blockFields.has(key));
     const update={...r,...Object.fromEntries(pageFields.map(([key,value])=>[key,value.trim()]))};
     if(folder){
@@ -865,6 +941,10 @@ function editor(record,defaultType,meetingId,pageId){
     if(links.length||r.driveLinks)update.driveLinks=links;
     if(socialEntry){
       if(!update.title){showError('Doplňte název.');return;}
+      if(socialPost){
+        await saveSocialPost(form,fd,r,update,revision,isChanged,event.submitter?.hasAttribute('data-save-and-add'));
+        return;
+      }
       if(await persist(r.id,revision,update,false)&&update.channel!==socialChannel)location.hash=socialHref(update.channel);
       return;
     }
@@ -953,7 +1033,7 @@ function editor(record,defaultType,meetingId,pageId){
       controls.forEach(element=>element.disabled=false);
     }
   });
-  form.querySelector('[data-delete]')?.addEventListener('click',()=>{
+  form.querySelector('[data-delete]')?.addEventListener('click',async()=>{
     if(!task&&listed().some(p=>p.id!==r.id&&(p.parent===r.id||p.links?.includes(r.id)))){
       showError('Nejdřív upravte podřízené stránky a interní odkazy vedoucí na tuto stránku.');
       return;
@@ -962,10 +1042,58 @@ function editor(record,defaultType,meetingId,pageId){
       showError('Zápis má navázané úkoly v roadmapě. Ponechte jej jako zdroj těchto úkolů.');
       return;
     }
-    if(confirm('Smazat položku „'+r.title+'“?')) persist(r.id,revision,{kind:r.kind,category:r.category,meetingId:r.meetingId},true);
+    if(socialPost&&allTasks().some(t=>t.socialId===r.id&&!t.publicationTask)){
+      showError('Příspěvek má navázané úkoly. Nejprve je odeberte.');return;
+    }
+    const tombstone={kind:r.kind,category:r.category,meetingId:r.meetingId,channel:r.channel,socialId:r.socialId};
+    if(confirm('Smazat položku „'+r.title+'“?')&&await persist(r.id,revision,tombstone,true)&&socialPost)await load();
   });
   dialog.showModal();
   previews();
+}
+async function saveSocialPost(form,fd,record,update,revision,isChanged,addTask){
+  const action=form.dataset.socialAction;
+  const previous=record.review?.state;
+  const decision=['approved','returned','published'].includes(action);
+  const reviewer=fd.get('socialReviewer');
+  const note=fd.get('decisionNote')?.trim()||'';
+  if(decision&&isChanged()){showError('Nejdřív uložte změny draftu. Rozhodnutí platí pro uloženou verzi.');return;}
+  if(action==='returned'&&!note){showError('Napište, co je potřeba upravit.');return;}
+  if(action==='pending'&&(!socialReviewers.includes(reviewer)||!update.date)){
+    showError('Vyberte schvalovatele a doplňte navrhovaný termín publikace.');
+    return;
+  }
+  const controls=[...form.elements].filter(element=>!element.disabled);
+  controls.forEach(element=>element.disabled=true);
+  try{
+    const kept=new Set([...form.querySelectorAll('[data-social-file]')].map(element=>element.dataset.socialFile));
+    const files=fd.getAll('socialFiles').filter(file=>file.name);
+    if(files.some(file=>file.size>20*1024*1024))throw Error('Soubor může mít nejvýše 20 MB. Větší soubor přidejte odkazem z Google Disku.');
+    form.mediaUploads??=new Map();
+    const media=socialMedia(record).filter(file=>kept.has(file.path));
+    for(const file of files){
+      const key=JSON.stringify([file.name,file.size,file.lastModified]);
+      if(!form.mediaUploads.has(key))form.mediaUploads.set(key,await uploadSocialMedia(file));
+      media.push(form.mediaUploads.get(key));
+    }
+    if(media.length||record.media)update.media=media;
+
+    if(decision){
+      update={...record,review:{...record.review,state:action,...(action==='published'?{}:{note})}};
+    }else if(action==='pending'){
+      update.review={state:'pending',reviewerId:reviewer,requestedBy:currentUserId()};
+    }else if(['pending','approved'].includes(previous)&&['title','description','channel','date','driveLinks','media'].some(key=>
+      JSON.stringify(update[key]??null)!==JSON.stringify(record[key]??null))){
+      delete update.review;
+      update.status='Návrh';
+    }
+
+    if(!await persist(record.id,revision,update,false))return;
+    if(action||previous==='approved')await load();
+    if(view==='some'&&update.channel!==socialChannel)location.hash=socialHref(update.channel);
+    if(addTask)editor(null,'social-task',null,null,record.id);
+  }catch(error){showError(error.message);}
+  finally{controls.forEach(element=>element.disabled=false);}
 }
 function showError(message){
   if(!dialog.open){flash(message);return;}
@@ -1014,6 +1142,9 @@ document.addEventListener('click',event=>{
   if(go) location.hash=go;
   if(button.dataset.meetingTask) editor(null,'project',button.dataset.meetingTask);
   if(button.dataset.newPageTask&&canOpen('web'))editor(null,'task',null,button.dataset.newPageTask);
+  if(button.dataset.newSocialTask&&records.get(button.dataset.newSocialTask)?.kind==='social'){
+    editor(null,'social-task',null,null,button.dataset.newSocialTask);
+  }
   if(button.dataset.new) editor(null,button.dataset.new);
   if(map){mapMode=map;render();}
   if(button.hasAttribute('data-close')) dialog.close();
@@ -1036,6 +1167,29 @@ signOutButton.onclick=signOut;
 signOutButton.hidden=false;
 window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0);});
 document.addEventListener('click',async event=>{
+  const copyButton=event.target.closest('[data-copy-social-text]');
+  if(copyButton){
+    try{
+      await navigator.clipboard.writeText(copyButton.form.elements.description.value);
+      flash('Text příspěvku je zkopírovaný.');
+    }catch{flash('Text se nepodařilo zkopírovat.');}
+    return;
+  }
+  const videoButton=event.target.closest('[data-load-social-video]');
+  if(videoButton){
+    const figure=videoButton.closest('[data-social-file]');
+    const video=figure.querySelector('video');
+    videoButton.disabled=true;
+    try{
+      video.src=await fileUrl(figure.dataset.socialFile);
+      video.hidden=false;
+      videoButton.remove();
+    }catch{
+      flash('Video se nepodařilo načíst.');
+      videoButton.disabled=false;
+    }
+    return;
+  }
   const a=event.target.closest('[data-hub-file]'); if(!a)return;
   event.preventDefault();
   const tab=a.target==='_blank'?window.open('about:blank','_blank'):null;

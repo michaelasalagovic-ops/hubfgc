@@ -204,3 +204,9 @@ dialog{width:min(720px,calc(100% - 24px));border-radius:13px}
 .drive-links a:hover{text-decoration:underline}
 .drive-link-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;align-items:end;gap:.5rem;margin-bottom:.6rem}
 @media(max-width:620px){.drive-link-row{grid-template-columns:minmax(0,1fr)}.drive-link-row button{justify-self:start}}
+
+.social-review p{margin:0}
+.social-media{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:.65rem}
+.social-media figure{min-width:0;margin:0;display:grid;justify-items:start;gap:.35rem}
+.social-media img,.social-media video{max-width:100%;max-height:16rem;border-radius:.5rem;object-fit:contain}
+.social-media figcaption{overflow-wrap:anywhere}

@@ -19,6 +19,11 @@ export async function loadAssignees(){
   if(!response.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
   return response.json();
 }
+export async function loadSocialReviewers(){
+  const response=await api('/rest/v1/rpc/fcg_social_reviewers',{method:'POST'});
+  if(!response.ok)throw Error('Schvalovatele se nepodařilo načíst.');
+  return (await response.json()).map(row=>row.user_id);
+}
 export async function loadAssigneeEmails(){
   const response=await api('/rest/v1/rpc/fcg_task_assignee_emails',{method:'POST'});
   if(!response.ok)throw Error('E-maily držitelů se nepodařilo načíst.');
@@ -175,6 +180,22 @@ export async function upload(file,folder){
   if(!r.ok)throw Error('Soubor se nepodařilo uložit.');
   return '/api/'+key;
 }
+const socialFormats={jpg:'image/jpeg',png:'image/png',webp:'image/webp',mp4:'video/mp4'};
+export async function uploadSocialMedia(file){
+  const head=new Uint8Array(await file.slice(0,12).arrayBuffer());
+  const header=String.fromCharCode(...head);
+  const extension=head[0]===255&&head[1]===216?'jpg':
+    head[0]===137&&header.slice(1,4)==='PNG'?'png':
+    header.startsWith('RIFF')&&header.endsWith('WEBP')?'webp':
+    header.slice(4,8)==='ftyp'?'mp4':'';
+  if(!extension)throw Error('Vyberte fotku JPG, PNG, WebP nebo video MP4.');
+  if(file.size>20*1024*1024)throw Error('Soubor může mít nejvýše 20 MB. Větší soubor přidejte odkazem z Google Disku.');
+  const key='social/'+crypto.randomUUID()+'.'+extension;
+  const response=await api('/storage/v1/object/fcg-files/'+key,{method:'POST',
+    headers:{'Content-Type':socialFormats[extension]},body:file});
+  if(!response.ok)throw Error('Soubor „'+file.name+'“ se nepodařilo nahrát.');
+  return {name:file.name,path:'/api/'+key};
+}
 export async function fileUrl(path){
   if(fileUrls.has(path))return fileUrls.get(path);
   const key=path.replace(/^\/api\//,'');
@@ -191,6 +212,9 @@ export async function fileUrl(path){
   const ext=key.split('.').pop();
   const formats={pdf:'application/pdf',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
   if(key.startsWith('documents/'))blob=blob.slice(0,blob.size,formats[ext]||'application/octet-stream');
+  else if(key.startsWith('social/')){
+    if(!Object.hasOwn(socialFormats,ext)||blob.type!==socialFormats[ext])throw Error('Nepodporovaný typ přílohy.');
+  }
   else if(!['image/jpeg','image/png','image/gif','image/webp'].includes(blob.type))throw Error('Neplatný typ obrázku.');
   const url=URL.createObjectURL(blob);fileUrls.set(path,url);return url;
 }
