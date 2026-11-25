@@ -2,6 +2,7 @@ import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUs
 import {needs,topics} from './data.js';
 
 const sections = {
+  prace:['✓','Moje práce','Úkoly, termíny a schválení, která čekají na vás.'],
   ucet:['⚙','Nastavení',''],
   'bez-pristupu':['','Pracovní prostor',''],
   roadmapa:['▦','Roadmapa','Úkoly napříč projektem, jejich vlastníci a termíny.'],
@@ -24,11 +25,12 @@ const categories=['Migrace','Obsah','Lokální SEO','Měření','AEO / GEO'];
 const projectAreas=['Projekt','Značka','Nabídka','Provoz'];
 const webViews=['prehled','stranky','sitemap','obsah','lokalni','mereni','podklady','plan'];
 const canOpen=id=>{
+  if(id==='prace')return allowedSections.length>0;
   if(id==='ucet')return isAdmin;
   if(id==='bez-pristupu')return !isAdmin&&allowedSections.length===0;
   return allowedSections.includes(webViews.includes(id)?'web':id);
 };
-const firstView=()=>['roadmapa','meetingy','dokumenty','prehled','strategie','ucet','bez-pristupu'].find(canOpen);
+const firstView=()=>['prace','ucet','bez-pristupu'].find(canOpen);
 const taskSection=(category,meetingId)=>meetingId?'meetingy':categories.includes(category)?'web':'roadmapa';
 function recordSection(record){
   if(record.kind==='task')return taskSection(record.category,record.meetingId);
@@ -181,7 +183,7 @@ const lanes=[
   {title:'Ke schválení',states:['K revizi','Připraveno']},
   {title:'Dokončeno',states:['Hotovo','Publikováno']}
 ];
-let roadMode='board',topic=topics[0],ownerFilter='',areaFilter='',tagFilter='';
+let roadMode='list',roadPreset='',topic=topics[0],ownerFilter='',areaFilter='',tagFilter='';
 const allTasks=()=>[...records.values()].filter(r=>r.kind==='task');
 const normalized=value=>value.trim().normalize('NFC').toLocaleLowerCase('cs');
 const otherOwner='other';
@@ -291,8 +293,58 @@ function taskTile(r){
     '<div class="badges flex flex-wrap gap-2">'+priorityBadge(r)+'</div>'+tagBadges(r)+(r.product?'<p>'+esc(r.product)+'</p>':'')+
     '<footer><span>'+esc(taskOwner(r)||'Bez přiřazení')+'</span><time>'+esc(dateText(r.date)||'Bez termínu')+'</time></footer></article>';
 }
+function weekBounds(now=new Date()){
+  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Prague',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
+  const sunday=new Date(today+'T00:00:00Z');
+  sunday.setUTCDate(sunday.getUTCDate()+(7-sunday.getUTCDay())%7);
+  return [today,sunday.toISOString().slice(0,10)];
+}
+const compareDue=(a,b)=>(a.date||'9999').localeCompare(b.date||'9999')||a.title.localeCompare(b.title,'cs');
+function taskList(tasks,editable=false){
+  if(!tasks.length)return '<p class="help">Žádné úkoly.</p>';
+  return '<div class="work-list">'+tasks.map(task=>{
+    const label=esc(task.title);
+    const id=esc(task.id);
+    const memberId=assignedMemberId(task);
+    const member=members.some(row=>row.user_id===memberId)?memberId:'';
+    const ownerChoices=members.map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}));
+    const custom=!member&&taskOwner(task);
+    if(custom)ownerChoices.unshift({value:otherOwner,label:custom});
+    const quickAttr=field=>'data-quick-task="'+id+'" data-quick-field="'+field+'"';
+    const quickLabel=field=>' aria-label="'+field+' · '+label+'"';
+    return '<article class="work-row" data-work-row="'+id+'"><div><button type="button" class="item-title" '+editAttr(task.id)+'>'+label+'</button><small>'+esc(task.category)+'</small></div>'+
+      (editable?
+        '<select '+quickAttr('status')+quickLabel('Stav')+'>'+options([...new Set([task.status,...statuses])].filter(Boolean),task.status,null)+'</select>'+
+        '<select '+quickAttr('owner')+quickLabel('Držitel úkolu')+(membersReady?'':' disabled')+'>'+options(ownerChoices,member||(custom?otherOwner:''),'Bez držitele')+'</select>'+
+        '<input type="date" '+quickAttr('date')+quickLabel('Termín')+' value="'+esc(task.date)+'">' :
+        '<span>'+statusBadge(task)+'</span><span>'+esc(taskOwner(task)||'Bez držitele')+'</span><span>'+esc(dateText(task.date)||'Bez termínu')+'</span>')+'</article>';
+  }).join('')+'</div>';
+}
+function myWork(){
+  const [today,sunday]=weekBounds();
+  const userId=currentUserId();
+  const active=allTasks().filter(task=>!isDone(task)).sort(compareDue);
+  const approvals=active.filter(task=>userId&&task.status==='K revizi'&&task.reviewerId===userId);
+  const mine=active.filter(task=>assignedMemberId(task)===userId&&!approvals.includes(task));
+  const groups=[
+    ['Čeká na moje schválení',approvals],
+    ['Po termínu',mine.filter(task=>task.date&&task.date<today)],
+    ['Tento týden',mine.filter(task=>task.date>=today&&task.date<=sunday)],
+    ['Později',mine.filter(task=>task.date>sunday)],
+    ['Bez termínu',mine.filter(task=>!task.date)]
+  ];
+  if(isAdmin)groups.push(['Týmové úkoly bez držitele',active.filter(task=>!assignedMemberId(task)&&!taskOwner(task))]);
+  const pilot=canOpen('web')&&records.get('assessment');
+  return heading('Moje práce',sections.prace[2])+
+    (pilot?'<section class="panel work-pilot"><div><h2>Pilotní stránka · Vstupní vyšetření</h2><p class="fine">Podklady, odborná revize, publikace a kontrola výsledků.</p></div>'+action('Otevřít pilotní kartu',editAttr('assessment'))+'</section>':'')+
+    groups.map(([title,tasks])=>'<section class="panel work-group"><h2>'+title+' '+badge(tasks.length)+'</h2>'+taskList(tasks)+'</section>').join('');
+}
 function roadmap(){
   const tasks=allTasks();
+  const [today,sunday]=weekBounds();
+  const matchesPreset=task=>!roadPreset||(!isDone(task)&&(
+    roadPreset==='week'?task.date>=today&&task.date<=sunday:
+    roadPreset==='unassigned'?!assignedMemberId(task)&&!taskOwner(task):task.status==='Čeká na podklady'));
   const owners=filterChoices(tasks.map(taskOwner),'Bez přiřazení');
   const tags=filterChoices(tasks.flatMap(taskTags),'Bez štítku');
   if(!owners.some(item=>item.value===ownerFilter))ownerFilter='';
@@ -302,11 +354,13 @@ function roadmap(){
     const owner=name?'value:'+normalized(name):'empty';
     const tagValues=taskTags(r).map(tag=>'value:'+normalized(tag));
     const matchesTag=!tagFilter||(tagFilter==='empty'?tagValues.length===0:tagValues.includes(tagFilter));
-    return (!areaFilter||r.category===areaFilter)&&(!ownerFilter||owner===ownerFilter)&&matchesTag;
-  }).sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')||a.title.localeCompare(b.title,'cs'));
+    return matchesPreset(r)&&(!areaFilter||r.category===areaFilter)&&(!ownerFilter||owner===ownerFilter)&&matchesTag;
+  }).sort(compareDue);
   const control=(label,mode)=>action(label,'data-mode="'+mode+'" aria-pressed="'+(roadMode===mode)+'"',mode===roadMode?'primary':'');
   let result;
-  if(roadMode==='board'){
+  if(roadMode==='list'){
+    result=taskList(selected,ready&&canWrite);
+  }else if(roadMode==='board'){
     result='<div class="lanes">'+lanes.map(({title,states})=>{
       const items=selected.filter(r=>states.includes(r.status));
       return '<section class="lane" data-drop="'+states[0]+'"><h2>'+title+' <span>'+items.length+'</span></h2>'+items.map(taskTile).join('')+(!items.length&&canWrite?'<div class="dropHint">Přesunout úkol sem</div>':'')+'</section>';
@@ -317,7 +371,7 @@ function roadmap(){
     result='<div class="timeline">'+([...groups].map(([date,items])=>'<section><h2>'+esc(dateText(date)||'Bez termínu')+'</h2><div>'+items.map(r=>'<div class="time-row"><div><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button>'+tagBadges(r)+'</div><span>'+esc(taskOwner(r)||'Bez přiřazení')+'</span>'+statusBadge(r)+'</div>').join('')+'</div></section>').join('')||noResults('Výběru neodpovídají žádné úkoly.'))+'</div>';
   }
   return heading('Roadmapa',sections.roadmapa[2],action('+ Přidat úkol','data-new="project"','primary'))+
-    '<div class="road-tools"><div class="actions">'+control('Podle stavu','board')+control('Časová osa','time')+'</div><div class="actions"><select aria-label="Oblast úkolů" data-road-filter="area">'+options(uniq(tasks.map(r=>r.category)),areaFilter,'Všechny oblasti')+'</select><select aria-label="Držitel úkolu" data-road-filter="owner">'+options(owners,ownerFilter,'Všichni držitelé')+'</select><select aria-label="Štítek úkolu" data-road-filter="tag">'+options(tags,tagFilter,'Všechny štítky')+'</select></div></div>'+
+    '<div class="road-tools"><div class="actions">'+control('Seznam','list')+control('Podle stavu','board')+control('Časová osa','time')+'</div><div class="actions"><select aria-label="Rychlý filtr" data-road-filter="preset">'+options([{value:'week',label:'Tento týden'},{value:'unassigned',label:'Bez držitele'},{value:'waiting',label:'Čeká na podklady'}],roadPreset,'Všechny úkoly')+'</select><select aria-label="Oblast úkolů" data-road-filter="area">'+options(uniq(tasks.map(r=>r.category)),areaFilter,'Všechny oblasti')+'</select><select aria-label="Držitel úkolu" data-road-filter="owner">'+options(owners,ownerFilter,'Všichni držitelé')+'</select><select aria-label="Štítek úkolu" data-road-filter="tag">'+options(tags,tagFilter,'Všechny štítky')+'</select></div></div>'+
     (roadMode==='board'&&canWrite?'<p class="boardhelp">Kartu přetáhněte do dalšího sloupce nebo otevřete úkol a změňte stav.</p>':'')+result;
 }
 function documentFolders(){
@@ -408,12 +462,35 @@ main.addEventListener('click',event=>{
   if(button?.dataset.mode){roadMode=button.dataset.mode;render();}
   if(button?.dataset.topic){topic=button.dataset.topic;render();}
 });
-main.addEventListener('change',event=>{
+main.addEventListener('change',async event=>{
+  const {quickTask,quickField}=event.target.dataset;
+  if(quickTask&&ready&&canWrite){
+    const task=records.get(quickTask);
+    if(!task)return;
+    const value=event.target.value;
+    const update={...task};
+    if(quickField==='owner'){
+      if(value===otherOwner)return;
+      const member=members.find(row=>row.user_id===value);
+      if(value&&!member){render();return;}
+      update.ownerId=member?.user_id??null;
+      update.owner=member?.display_name||'';
+    }else if((quickField==='status'&&statuses.includes(value))||quickField==='date'){
+      update[quickField]=value;
+    }else return;
+    const row=event.target.closest('[data-work-row]');
+    row.querySelectorAll('input,select').forEach(control=>control.disabled=true);
+    await persist(task.id,versions.get(task.id)||0,update,false,{inline:true});
+    render();
+    [...main.querySelectorAll('[data-quick-task]')].find(control=>control.dataset.quickTask===quickTask&&control.dataset.quickField===quickField)?.focus();
+    return;
+  }
   const key=event.target.dataset.roadFilter;
   if(!key)return;
   if(key==='area')areaFilter=event.target.value;
   else if(key==='owner')ownerFilter=event.target.value;
   else if(key==='tag')tagFilter=event.target.value;
+  else if(key==='preset')roadPreset=event.target.value;
   render();
 });
 main.addEventListener('dragstart',event=>{
@@ -448,7 +525,7 @@ function render(){
   document.querySelector('#crumb').textContent=sections[view][1];
   const link=(id,title=sections[id][1])=>'<a href="#'+id+'" '+(id===view?'aria-current="page"':'')+'><span class="nav-icon" aria-hidden="true">'+sections[id][0]+'</span>'+title+'</a>';
   document.querySelector('.brand').setAttribute('href','#'+firstView());
-  document.querySelector('#nav').innerHTML=['roadmapa','meetingy','dokumenty','prehled','strategie'].filter(canOpen).map(id=>{
+  document.querySelector('#nav').innerHTML=['prace','roadmapa','meetingy','dokumenty','prehled','strategie'].filter(canOpen).map(id=>{
     if(id!=='prehled')return link(id);
     return link(id,'Web')+(webViews.includes(view)?'<div class="subnav">'+webViews.map(item=>link(item)).join('')+'</div>':'');
   }).join('');
@@ -459,7 +536,7 @@ function render(){
   sync.textContent=ready?(canWrite?'Ukládání do hubu':'Režim čtení'):loading?'Načítám data…':'Připojení se nezdařilo';
   sync.classList.toggle('ready',ready);
   main.innerHTML=loading?noResults('Načítám pracovní prostor…'):({
-    ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,strategie:knowledge,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView,
+    prace:myWork,ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,strategie:knowledge,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView,
     'bez-pristupu':()=>noResults('Zatím nemáte přístup k žádné sekci HUBu.')
   })[view]();
   const heading=main.querySelector('.heading');
@@ -552,7 +629,7 @@ function descendantOf(page,ancestor){
   }
   return false;
 }
-function editor(record,defaultType,meetingId){
+function editor(record,defaultType,meetingId,pageId){
   if(!canWrite&&!record)return;
   if(!ready){flash('Pro úpravy je potřeba obnovit připojení.');return;}
   const folder=record?.isFolder===true||defaultType==='document-folder';
@@ -564,7 +641,7 @@ function editor(record,defaultType,meetingId){
   const localDate=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
   const r=record??(doc?{kind:'document',id:crypto.randomUUID(),title:'',folderId:folderView,...(folder?{isFolder:true}:{files:[]})}:meeting?{kind:'meeting',id:crypto.randomUUID(),date:localDate,title:'',notes:''}:{id:crypto.randomUUID(),title:'',type:defaultType==='video'?'Video':defaultType==='local'?'Lokální SEO':'Obsah',
     service:defaultType==='video'?'Koučink':'',parent:defaultType==='video'?'videos':defaultType==='local'?'branches':'',
-    category:defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{})}:{links:[]})});
+    category:defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{}),...(pageId?{pageId}:{})}:{links:[]})});
   if(!canOpen(recordSection(r)))return;
   const pageChoices=listed().filter(p=>p.id!==r.id).map(p=>({value:p.id,label:p.title}));
   const workflow=(task?ownerField(r):input(r,'owner','Vlastník'))+input(r,'date','Termín',{type:'date'})+
@@ -588,9 +665,18 @@ function editor(record,defaultType,meetingId){
   }else if(task){
     const source=records.get(r.meetingId);
     const taskAreas=[...new Set([r.category,...projectAreas,...categories])].filter(category=>category&&canOpen(taskSection(category,r.meetingId)));
+    const page=canOpen('web')&&records.get(r.pageId);
+    const reviewerChoices=members.map(member=>({value:member.user_id,label:assigneeEmails.get(member.user_id)||memberLabel(member)}));
+    if(r.reviewerId&&!members.some(member=>member.user_id===r.reviewerId)){
+      reviewerChoices.push({value:r.reviewerId,label:'Dříve nastavený schvalovatel'});
+    }
+    const relatedPage=canOpen('web')?'<label class="field">Související stránka<select name="pageId">'+
+      options(listed().map(entry=>({value:entry.id,label:entry.title})),r.pageId,'Bez vazby')+'</select></label>':'';
     fields=(source?'<p class="help">Ze schůzky '+esc(source.title)+' · '+esc(dateText(source.date))+'</p>':'')+
+      (page?'<div class="actions">'+action('Otevřít stránku '+page.title,editAttr(page.id))+'</div>':'')+
       group('Zadání a plán',requiredTitle+input(r,'category','Oblast',{values:taskAreas,required:true})+
-      workflow+tagField(r)+input(r,'product','Produkt / výstup',{wide:true})+area(r,'description','Popis úkolu a výstupu')+area(r,'check','Jak ověříme splnění')+area(r,'notes','Poznámky'),true);
+      workflow+'<label class="field">Schvaluje<select name="reviewerId">'+options(reviewerChoices,r.reviewerId,'Bez schvalovatele')+'</select></label>'+
+      relatedPage+tagField(r)+input(r,'product','Produkt / výstup',{wide:true})+area(r,'description','Popis úkolu a výstupu')+area(r,'check','Jak ověříme splnění')+area(r,'notes','Poznámky'),true);
   }else{
     fields=group('Stránka a stav',requiredTitle+input(r,'type','Typ stránky',{values:types,required:true})+
       input(r,'service','Služba')+workflow,true)+
@@ -616,19 +702,37 @@ function editor(record,defaultType,meetingId){
       group('Ověřené a otevřené informace',area(r,'verified','Ověřené informace a zdroj')+
         area(r,'open','Otevřené informace k ověření')+area(r,'notes','Poznámky'),true);
   }
+  if(record&&!doc&&!meeting&&!note&&!task){
+    const linked=allTasks().filter(item=>item.pageId===r.id)
+      .sort((a,b)=>(a.pilotStep||99)-(b.pilotStep||99)||compareDue(a,b));
+    fields='<section class="form-section linked-work"><h3>Související úkoly</h3>'+taskList(linked)+
+      (canWrite?action('+ Přidat úkol','data-new-page-task="'+esc(r.id)+'"'):'')+'</section>'+fields;
+  }
   dialog.innerHTML='<form id="record-form"><header class="dialog-head"><h2 id="editor-title">'+esc(record?r.title:folder?'Nová složka':doc?'Nový dokument':meeting?'Nový zápis':note?'Nový podklad':task?'Nový úkol':'Nová stránka')+'</h2>'+
     action('Zavřít','data-close')+'</header><div class="dialog-body">'+fields+'</div>'+
     '<footer class="dialog-foot"><div>'+(record&&isAdmin&&!folder?action('Smazat','data-delete','danger'):'')+'</div>'+
     '<div>'+action('Zrušit','data-close')+(meeting?'<button class="btn" type="submit" data-save-and-add>Uložit a přidat úkol</button>':'')+'<button type="submit" class="btn primary">Uložit</button></div></footer></form>';
   const form=dialog.querySelector('form');
+  const initialEntries=[...new FormData(form)];
+  form.addEventListener('click',event=>{
+    if(!event.target.closest('[data-edit],[data-new-page-task]'))return;
+    const currentEntries=[...new FormData(form)];
+    const sameField=(a,b)=>typeof a==='string'?a===b:typeof b!=='string'&&a.name===b.name&&a.size===b.size&&(!a.name||a.lastModified===b.lastModified);
+    const changed=currentEntries.length!==initialEntries.length||
+      currentEntries.some(([key,value],index)=>key!==initialEntries[index][0]||!sameField(value,initialEntries[index][1]));
+    if(changed&&!confirm('Otevřít položku bez uložení rozepsaných změn?'))event.stopPropagation();
+  });
   const previews=()=>{
     for(const img of dialog.querySelectorAll('[data-hub-image]'))fileUrl(img.dataset.hubImage).then(url=>img.src=url).catch(()=>flash('Obrázek se nepodařilo načíst.'));
   };
   if(!canWrite){
     form.querySelector('footer').remove();
     for(const element of form.querySelectorAll('.dialog-body input,.dialog-body select,.dialog-body textarea,.dialog-body button')){
-      if(element.matches('button'))element.remove();
-      else if(element.matches('input[type=file]'))element.closest('label').remove();
+      if(element.matches('button')){
+        if(!element.hasAttribute('data-edit'))element.remove();
+        continue;
+      }
+      if(element.matches('input[type=file]'))element.closest('label').remove();
       else if(element.matches('textarea,input:not([type=checkbox])'))element.readOnly=true;
       else element.disabled=true;
     }
@@ -790,23 +894,22 @@ function showError(message){
   body.prepend(error);
   body.scrollTop=0;
 }
-async function persist(id,version,record,deleted){
-  const controls=[...dialog.querySelectorAll('.dialog-head button,.dialog-foot button')];
+async function persist(id,version,record,deleted,{inline=false}={}){
+  const controls=inline?[]:[...dialog.querySelectorAll('.dialog-head button,.dialog-foot button')];
   controls.forEach(button=>button.disabled=true);
   try{
     const response=await saveRecord(id,version,record,deleted,records.has(id)||versions.has(id));
-    if(response.status===409){showError('Položku mezitím někdo upravil. Zkopírujte rozpracované změny, zavřete kartu a znovu ji otevřete.');await load();return;}
+    if(response.status===409){showError(inline?'Úkol mezitím někdo upravil. Zkontrolujte načtený stav.':'Položku mezitím někdo upravil. Zkopírujte rozpracované změny, zavřete kartu a znovu ji otevřete.');await load();return;}
     if(!response.ok) throw Error();
     const result=await response.json();
     if(deleted) records.delete(id);
     else records.set(id,record);
     versions.set(id,result.version);
-    dialog.close();
-    render();
+    if(!inline){dialog.close();render();}
     flash(deleted?'Položka byla smazána.':'Změny byly uloženy.');
     return true;
   }catch{
-    showError('Uložení se nepodařilo. Úpravy zůstaly ve formuláři. Zkuste uložit znovu.');
+    showError(inline?'Změnu v seznamu se nepodařilo uložit.':'Uložení se nepodařilo. Úpravy zůstaly ve formuláři. Zkuste uložit znovu.');
   }finally{
     controls.forEach(button=>button.disabled=false);
   }
@@ -826,6 +929,7 @@ document.addEventListener('click',event=>{
   if(edit&&records.has(edit)) editor(records.get(edit));
   if(go) location.hash=go;
   if(button.dataset.meetingTask) editor(null,'project',button.dataset.meetingTask);
+  if(button.dataset.newPageTask&&canOpen('web'))editor(null,'task',null,button.dataset.newPageTask);
   if(button.dataset.new) editor(null,button.dataset.new);
   if(map){mapMode=map;render();}
   if(button.hasAttribute('data-close')) dialog.close();

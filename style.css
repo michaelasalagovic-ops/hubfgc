@@ -177,3 +177,19 @@ dialog{width:min(720px,calc(100% - 24px));border-radius:13px}
   .container .document-details .card{grid-template-columns:minmax(0,1fr) max-content}
   .document-details .card .actions{grid-column:1/-1;justify-content:flex-start}
 }
+.work-pilot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.work-pilot h2,.work-group h2{margin:0 0 5px}
+.work-group{margin-bottom:10px}
+.work-group .help{margin-top:6px}
+.work-list{display:grid;gap:4px}
+.work-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(120px,1fr) minmax(150px,1.2fr) minmax(110px,.85fr);gap:8px;align-items:center;background:white;border:1px solid var(--line);padding:7px 9px;border-radius:8px}
+.work-row>div,.work-row>span{min-width:0;overflow-wrap:anywhere}
+.work-row small{display:block;margin-top:3px;color:var(--muted)}
+.work-row select,.work-row input{width:100%;min-width:0;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:white;color:var(--navy);font-size:.82rem}
+.work-row .badge{white-space:normal}
+.linked-work h3{font-size:.92rem;margin:0 0 7px}
+.linked-work>.btn{margin-top:8px}
+@media(max-width:760px){
+  .work-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .work-row>div{grid-column:1/-1}
+}
