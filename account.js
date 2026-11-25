@@ -3,6 +3,8 @@ import {endpoint,apikey} from './config.js';
 let session=JSON.parse(sessionStorage.getItem('fcg-session')||'null');
 let refreshing;
 export let isAdmin=false;
+export let canWrite=false;
+const roleLabels={admin:'Administrátor',editor:'Editor',reader:'Čtenář'};
 const fileUrls=new Map();
 const main=document.querySelector('#main');
 
@@ -33,11 +35,15 @@ export async function api(path,options={}){
   return fetch(endpoint+path,{...options,headers:{apikey,Authorization:'Bearer '+await token(),...options.headers}});
 }
 async function role(){
-  const res=await api('/rest/v1/rpc/fcg_can_write',{method:'POST'});
+  const res=await api('/rest/v1/rpc/fcg_can_read',{method:'POST'});
   if(!res.ok||!await res.json()) throw Error('Tento účet nemá přístup do týmu FCG.');
-  const admin=await api('/rest/v1/rpc/fcg_is_admin',{method:'POST'});
-  if(!admin.ok)throw Error('Oprávnění se nepodařilo načíst.');
+  const [admin,write]=await Promise.all([
+    api('/rest/v1/rpc/fcg_is_admin',{method:'POST'}),
+    api('/rest/v1/rpc/fcg_can_write',{method:'POST'})
+  ]);
+  if(!admin.ok||!write.ok)throw Error('Oprávnění se nepodařilo načíst.');
   isAdmin=await admin.json();
+  canWrite=await write.json();
 }
 function showPasswordReset(accessToken){
   document.querySelector('#sync').textContent='Obnova hesla';
@@ -168,8 +174,9 @@ export async function fileUrl(path){
   const url=URL.createObjectURL(blob);fileUrls.set(path,url);return url;
 }
 export function accountPanel(){
-  return '<h1>Správa účtu</h1><form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
-    (isAdmin?'<h2>Uživatelé hubu</h2><ul data-members></ul><form class="form-grid panel" data-member><label class="field">E-mail kolegy<input name="email" required type="email"></label><label class="field">Počáteční heslo pro nový účet<input name="password" type="password" minlength="12" autocomplete="new-password"></label><button class="btn primary">Povolit zápis</button></form>':'')+
+  return '<h1>Správa účtu</h1><p>Vaše role v HUBu: <strong>'+roleLabels[isAdmin?'admin':canWrite?'editor':'reader']+'</strong></p>'+
+    '<form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
+    (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div><form class="form-grid panel" data-member><label class="field">E-mail kolegy<input name="email" required type="email"></label><label class="field">Počáteční heslo pro nový účet<input name="password" type="password" minlength="12" autocomplete="new-password"></label><button class="btn primary">Povolit zápis</button></form>':'')+
     '<p role="status" data-account-status></p><button class="btn" data-signout>Odhlásit se</button>';
 }
 export async function bindAccount(){
@@ -182,13 +189,68 @@ export async function bindAccount(){
   if(!isAdmin)return;
   const list=main.querySelector('[data-members]');
   async function refresh(){
-    const r=await api('/rest/v1/fcg_members?select=email&order=email');if(!r.ok)throw Error();
+    const r=await api('/rest/v1/rpc/fcg_list_members',{method:'POST'});
+    if(!r.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
     const rows=await r.json();list.replaceChildren();
     for(const row of rows){
-      const li=document.createElement('li');li.textContent=row.email+' ';
-      const remove=document.createElement('button');remove.className='btn';remove.textContent='Odebrat přístup';
-      remove.onclick=async()=>{if(!confirm('Odebrat přístup pro '+row.email+'?'))return;const response=await api('/rest/v1/fcg_members?email=eq.'+encodeURIComponent(row.email),{method:'DELETE'});if(response.ok)await refresh();else status.textContent='Změna se nepodařila.';};
-      li.append(remove);list.append(li);
+      const tr=list.insertRow();
+      const own=row.email===session.user?.email?.toLowerCase();
+      tr.insertCell().textContent=row.email+(own?' (vy)':'');
+      const roleCell=tr.insertCell();
+      roleCell.textContent=roleLabels[row.role];
+      tr.insertCell().textContent=row.has_account?'Založený':'Chybí účet';
+      const actions=tr.insertCell();
+      if(own){actions.textContent='Vlastní účet';continue;}
+      const field=document.createElement('label');field.className='field';
+      field.textContent='Nová role';
+      const select=document.createElement('select');
+      select.setAttribute('aria-label','Nová role pro '+row.email);
+      for(const [value,label] of Object.entries(roleLabels)){
+        const option=new Option(label,value,value===row.role,value===row.role);
+        option.disabled=value==='admin'&&!row.has_account;
+        select.append(option);
+      }
+      field.append(select);
+      const save=document.createElement('button');
+      save.className='btn';save.textContent='Uložit roli';save.disabled=true;
+      const remove=document.createElement('button');
+      remove.className='btn';remove.textContent='Odebrat přístup';
+      const buttons=document.createElement('div');
+      buttons.className='actions';buttons.append(save);
+      if(row.role!=='admin')buttons.append(remove);
+      actions.append(buttons);
+      roleCell.append(field);
+      select.onchange=()=>{save.disabled=select.value===row.role;};
+      save.onclick=async()=>{
+        if(select.value==='admin'&&!confirm('Přidělit roli administrátora účtu '+row.email+'?'))return;
+        select.disabled=save.disabled=remove.disabled=true;
+        try{
+          const response=await api('/rest/v1/rpc/fcg_set_member_role',{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({target_email:row.email,new_role:select.value,expected_role:row.role})
+          });
+          if(response.status===409){
+            await refresh();
+            status.textContent='Údaje o účtu se změnily. Zkontrolujte aktuální roli a zkuste to znovu.';
+            return;
+          }
+          if(!response.ok)throw Error('Roli se nepodařilo změnit.');
+          await refresh();
+          status.textContent='Role uložena pro '+row.email+'.';
+        }catch(error){status.textContent=error.message;}
+        finally{select.disabled=remove.disabled=false;save.disabled=select.value===row.role;}
+      };
+      remove.onclick=async()=>{
+        if(!confirm('Odebrat přístup pro '+row.email+'?'))return;
+        select.disabled=save.disabled=remove.disabled=true;
+        try{
+          const response=await api('/rest/v1/fcg_members?email=eq.'+encodeURIComponent(row.email),{method:'DELETE'});
+          if(!response.ok)throw Error('Přístup se nepodařilo odebrat.');
+          await refresh();
+          status.textContent='Přístup odebrán pro '+row.email+'.';
+        }catch(error){status.textContent=error.message;}
+        finally{select.disabled=remove.disabled=false;save.disabled=select.value===row.role;}
+      };
     }
   }
   main.querySelector('[data-member]').onsubmit=async e=>{
