@@ -352,7 +352,7 @@ function documentList(){
     trail.map(folder=>folder.id===folderView?'<span aria-current="page">'+esc(folder.title)+'</span>':'<a href="'+folderHref(folder.id)+'">'+esc(folder.title)+'</a>').join('')+'</nav>':'';
   return heading(current?.title||'Dokumenty',current?'Dokumenty a podsložky':sections.dokumenty[2],
     action('+ Nová složka','data-new="document-folder"','primary')+action('+ Přidat dokument','data-new="document"'))+breadcrumbs+
-    (children.length||items.length?'<div class="cards">'+folderCards+items.map(r=>'<article class="card"><h2>'+esc(r.title)+'</h2><p>'+esc(r.description)+'</p><div class="actions">'+
+    (children.length||items.length?'<div class="cards document-grid">'+folderCards+items.map(r=>'<article class="card"><h2>'+esc(r.title)+'</h2><p>'+esc(r.description)+'</p><div class="actions">'+
       (r.files||[]).filter(f=>/^\/api\/documents\/[a-z0-9-]+\.(pdf|docx|pptx|xlsx)$/.test(f.path)).map(f=>{
         const ext=f.path.split('.').pop();
         return '<a class="btn" href="#dokumenty" data-hub-file="'+esc(f.path)+'" '+(ext==='pdf'?'target="_blank" rel="noopener"':'download="'+esc(f.name)+'"')+'>'+esc(ext==='pdf'?'Otevřít PDF':'Stáhnout '+ext.toUpperCase())+'</a>';

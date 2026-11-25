@@ -36,19 +36,19 @@ dialog{border:0;padding:0;border-radius:17px;width:min(830px,calc(100% - 24px));
 .mark i{border-top-color:#f0f5ff}
 .rail nav a{font-size:.9rem}
 .rail nav a[aria-current]{background:#263b6a}
-.top{min-height:69px}
+.top{min-height:50px;padding:7px 24px}
 .top>span{min-width:0}
 #sync{white-space:nowrap}
-.container{padding-top:28px}
+.container{padding:18px 24px 34px;font-size:.875rem}
 .heading{
   position:relative;isolation:isolate;overflow:hidden;align-items:center;
-  min-height:158px;padding:24px clamp(20px,3.5vw,44px);border-radius:18px;
+  min-height:88px;padding:14px clamp(14px,2vw,24px);border-radius:13px;
   color:white;background:linear-gradient(108deg,#102454,#203f9e 72%,#2b55c6);
-  margin-bottom:24px;
+  margin-bottom:16px;
 }
 .heading>div:not(.hero-art){position:relative;z-index:1}
-.heading h1{font-size:clamp(2rem,3.8vw,3.25rem);letter-spacing:-.05em}
-.heading p{color:#e4edff;max-width:570px;font-size:.97rem}
+.heading h1{font-size:clamp(1.375rem,2.4vw,1.875rem);letter-spacing:-.035em;margin-bottom:4px}
+.heading p{color:#e4edff;max-width:570px;font-size:.875rem;line-height:1.4}
 .heading .btn.primary{color:#183685;background:#fff;border-color:#fff}
 .heading .btn.primary:hover{background:#e8efff;border-color:#e8efff}
 .heading .btn:not(.primary){background:#ffffff14;border-color:#cfddff80;color:white}
@@ -83,7 +83,7 @@ dialog{border:0;padding:0;border-radius:17px;width:min(830px,calc(100% - 24px));
 .account-name [data-name-status]:empty{display:none}
 dialog[open]{animation:dialog-appear .18s ease-out}
 @keyframes dialog-appear{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.bell{position:relative;display:grid;place-items:center;flex:none;width:39px;height:39px;border:1px solid #cdd9ee;border-radius:10px;background:white;color:#14284b}
+.bell{position:relative;display:grid;place-items:center;flex:none;width:36px;height:36px;border:1px solid #cdd9ee;border-radius:9px;background:white;color:#14284b}
 [hidden]{display:none!important}
 .bell:hover{background:#eaf0ff}
 #notification-count{position:absolute;top:-5px;right:-5px;min-width:18px;padding:0 4px;border:1px solid white;border-radius:12px;background:var(--blue);color:white;font-size:.7rem;line-height:17px;font-weight:750}
@@ -99,9 +99,9 @@ dialog[open]{animation:dialog-appear .18s ease-out}
 @media(max-width:650px){
   .rail{padding-top:12px}
   .rail nav a{font-size:.82rem}
-  .container{padding-top:16px}
-  .top{min-height:55px}
-  .heading{min-height:135px;margin-bottom:17px}
+  .container{padding:12px 12px 24px}
+  .top{min-height:46px;padding:5px 12px}
+  .heading{min-height:0;gap:8px;margin-bottom:12px}
   .hero-art{width:55%;opacity:.45}
   .meeting-timeline{padding-left:8px}
   #sync{white-space:normal;text-align:right}
@@ -128,7 +128,41 @@ dialog[open]{animation:dialog-appear .18s ease-out}
 .document-path{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 16px;color:var(--muted);font-size:.92rem}
 .document-path a{color:#244cac;text-decoration:underline;text-underline-offset:3px}
 .document-path>*+*::before{content:"/";display:inline-block;margin-right:8px;color:var(--muted)}
-.document-folder h2 a{display:inline-flex;gap:10px;align-items:center;color:#183d88;overflow-wrap:anywhere}
+.document-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr))}
+.document-folder h2 a{display:inline-flex;gap:8px;align-items:center;min-height:36px;color:#183d88;overflow-wrap:anywhere}
 .document-folder h2 a:hover{text-decoration:underline}
-.folder-icon{position:relative;flex:none;width:25px;height:17px;margin-top:3px;border:2px solid #4b73d5;border-radius:3px;background:#e9f0ff}
-.folder-icon::before{content:"";position:absolute;top:-6px;left:-2px;width:12px;height:6px;border:2px solid #4b73d5;border-bottom:0;border-radius:3px 3px 0 0;background:#e9f0ff}
+.folder-icon{position:relative;flex:none;width:19px;height:13px;margin-top:3px;border:1.5px solid #4b73d5;border-radius:3px;background:#e9f0ff}
+.folder-icon::before{content:"";position:absolute;top:-5px;left:-1.5px;width:9px;height:5px;border:1.5px solid #4b73d5;border-bottom:0;border-radius:3px 3px 0 0;background:#e9f0ff}
+
+/* Compact spacing in the workspace, including edit dialogs. */
+.container h2{font-size:1rem;line-height:1.35}
+.container .card h2{margin:0}
+.container .hero{padding:16px 18px;margin-bottom:12px}
+.container .need{min-height:48px;padding:8px}
+.container .panel,.container .card,.container .kbcard{padding:12px}
+.container .stat{padding:10px 12px}
+.container .stat b{font-size:21px}
+.container .empty{padding:16px}
+.container .lane{min-height:168px;padding:9px 8px}
+.container .lane h2{margin:2px 0 9px;font-size:.875rem}
+.container .ticket{padding:9px;margin-bottom:7px}
+.container .ticket .item-title,.container .kbcard .item-title{font-size:.9rem}
+.container .ticket footer{margin-top:8px;padding-top:6px}
+.container .table th,.container .table td{padding:7px 9px}
+.container .tree-row,.container .time-row{padding-block:7px}
+.container .list-row{padding-block:7px}
+.container .btn,dialog .btn{min-height:34px;padding:6px 10px}
+dialog{width:min(720px,calc(100% - 24px));border-radius:13px}
+.dialog-head,.dialog-foot,.dialog-body{padding:10px 14px}
+.dialog-head h2{font-size:1rem;overflow-wrap:anywhere}
+.dialog-foot>div:last-child{flex-wrap:wrap;justify-content:flex-end}
+.form-section{padding:9px 11px;margin-bottom:8px}
+.form-grid{gap:8px;margin-top:8px}
+.field input,.field select,.field textarea,.filter-grid input,.filter-grid select{min-height:34px;padding:6px 8px}
+.field textarea{min-height:68px}
+.content-block textarea{min-height:110px}
+@media(max-width:650px){
+  .container .table-wrap:not(.mapping) td{padding:0}
+  .dialog-head,.dialog-foot,.dialog-body{padding:8px 10px}
+  .field input,.field select,.field textarea,.filter-grid input,.filter-grid select{font-size:1rem}
+}
