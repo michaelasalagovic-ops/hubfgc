@@ -179,7 +179,10 @@ export function accountPanel(){
     (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
     '<form class="form-grid panel" data-member aria-labelledby="create-member-title"><h3 class="wide" id="create-member-title">Nový přihlašovací účet</h3>'+
     '<label class="field">E-mail kolegy<input name="email" type="email" maxlength="254" required></label>'+
-    '<label class="field">Počáteční heslo (alespoň 12 znaků)<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>'+
+    '<div class="field"><label for="member-password">Počáteční heslo (alespoň 12 znaků)</label>'+
+    '<div class="password-field"><input id="member-password" name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required>'+
+    '<button type="button" class="btn password-toggle" data-password-toggle aria-label="Zobrazit heslo" title="Zobrazit heslo" aria-controls="member-password">'+
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/><path class="password-slash" d="m4 4 16 16"/></svg></button></div></div>'+
     '<div class="actions wide"><button type="submit" class="btn primary">Založit účet v HUBu</button></div></form>':'')+
     '<p role="status" data-account-status></p><button class="btn" data-signout>Odhlásit se</button>';
 }
@@ -195,7 +198,14 @@ export async function bindAccount(){
   const memberForm=main.querySelector('[data-member]');
   const email=memberForm.elements.email;
   const password=memberForm.elements.password;
+  const toggle=memberForm.querySelector('[data-password-toggle]');
   const create=memberForm.querySelector('button[type=submit]');
+  function showPassword(visible){
+    password.type=visible?'text':'password';
+    toggle.setAttribute('aria-label',visible?'Skrýt heslo':'Zobrazit heslo');
+    toggle.title=visible?'Skrýt heslo':'Zobrazit heslo';
+  }
+  toggle.onclick=()=>showPassword(password.type==='password');
   async function refresh(){
     const r=await api('/rest/v1/rpc/fcg_list_members',{method:'POST'});
     if(!r.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
@@ -234,7 +244,10 @@ export async function bindAccount(){
         activate.setAttribute('aria-label','Založit účet pro '+row.email);
         activate.onclick=()=>{
           if(create.disabled)return;
-          if(email.value.trim().toLowerCase()!==row.email)password.value='';
+          if(email.value.trim().toLowerCase()!==row.email){
+            password.value='';
+            showPassword(false);
+          }
           email.value=row.email;
           password.focus();
         };
@@ -292,6 +305,7 @@ export async function bindAccount(){
         throw Error(result?.error||'Účet se nepodařilo založit.');
       }
       memberForm.reset();
+      showPassword(false);
       const users=await refresh().catch(()=>null);
       status.textContent=users?.some(user=>user.email===address&&user.has_account)
         ?'Přihlašovací účet pro '+address+' je připravený. Počáteční heslo k novému účtu předejte soukromě.'
