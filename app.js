@@ -43,6 +43,9 @@ const documentRoots=[
 const brandDocuments=new Set(['doc-brand-book','doc-linkedin-manual','doc-manual-loga','doc-strategie']);
 const filters={q:'',type:'',service:'',audience:'',status:'',priority:''};
 let view='prehled', mapMode='tree', folderView='', ready=false, loading=true, toastTimer;
+const documentViewKey='fcg-document-view';
+let documentView='tiles';
+try{if(localStorage.getItem(documentViewKey)==='details')documentView='details';}catch{}
 const main=document.querySelector('#main');
 const dialog=document.querySelector('#editor');
 const settingsLink=document.querySelector('#settings-link');
@@ -336,6 +339,17 @@ function documentParent(record,folders){
   const id=Object.hasOwn(record,'folderId')?record.folderId:brandDocuments.has(record.id)?'folder-brand':'';
   return folders.has(id)?id:'';
 }
+const documentFiles=record=>(record.files||[]).filter(file=>/^\/api\/documents\/[a-z0-9-]+\.(pdf|docx|pptx|xlsx)$/.test(file.path));
+function folderFileCounts(documents,folders){
+  const counts=new Map();
+  for(const document of documents){
+    const total=documentFiles(document).length;
+    for(const folder of folderPath(documentParent(document,folders),folders)){
+      counts.set(folder.id,(counts.get(folder.id)||0)+total);
+    }
+  }
+  return counts;
+}
 function documentList(){
   const folders=documentFolders();
   if(folderView&&!folders.has(folderView)){
@@ -345,18 +359,29 @@ function documentList(){
   const trail=folderPath(folderView,folders);
   const current=folders.get(folderView);
   const children=[...folders.values()].filter(folder=>documentParent(folder,folders)===folderView);
-  const items=[...records.values()].filter(r=>r.kind==='document'&&!r.isFolder&&documentParent(r,folders)===folderView);
+  const documents=[...records.values()].filter(r=>r.kind==='document'&&!r.isFolder);
+  const items=documents.filter(r=>documentParent(r,folders)===folderView);
+  const detailed=documentView==='details';
+  const counts=detailed?folderFileCounts(documents,folders):new Map();
+  const count=number=>detailed?'<span class="document-file-count">Počet souborů: '+number+'</span>':'';
   const folderCards=children.map(folder=>'<article class="card document-folder"><h2><a href="'+folderHref(folder.id)+'"><span class="folder-icon" aria-hidden="true"></span>'+esc(folder.title)+'</a></h2>'+
-    (folder.isFolder&&canWrite?action('Přejmenovat',editAttr(folder.id)):'')+'</article>').join('');
+    count(counts.get(folder.id)||0)+(folder.isFolder&&canWrite?'<div class="actions">'+action('Přejmenovat',editAttr(folder.id))+'</div>':'')+'</article>').join('');
   const breadcrumbs=current?'<nav class="document-path" aria-label="Umístění dokumentů"><a href="'+folderHref('')+'">Dokumenty</a>'+
     trail.map(folder=>folder.id===folderView?'<span aria-current="page">'+esc(folder.title)+'</span>':'<a href="'+folderHref(folder.id)+'">'+esc(folder.title)+'</a>').join('')+'</nav>':'';
-  return heading(current?.title||'Dokumenty',current?'Dokumenty a podsložky':sections.dokumenty[2],
-    action('+ Nová složka','data-new="document-folder"','primary')+action('+ Přidat dokument','data-new="document"'))+breadcrumbs+
-    (children.length||items.length?'<div class="cards document-grid">'+folderCards+items.map(r=>'<article class="card"><h2>'+esc(r.title)+'</h2><p>'+esc(r.description)+'</p><div class="actions">'+
-      (r.files||[]).filter(f=>/^\/api\/documents\/[a-z0-9-]+\.(pdf|docx|pptx|xlsx)$/.test(f.path)).map(f=>{
+  const viewButton=(label,mode)=>action(label,'data-document-view="'+mode+'" aria-pressed="'+(documentView===mode)+'"');
+  const viewPicker='<div class="document-view-picker" role="group" aria-label="Zobrazení dokumentů">'+
+    viewButton('Podrobnosti','details')+viewButton('Dlaždice','tiles')+'</div>';
+  const documentCards=items.map(record=>{
+    const files=documentFiles(record);
+    return '<article class="card"><div><h2>'+esc(record.title)+'</h2><p>'+esc(record.description)+'</p></div>'+count(files.length)+'<div class="actions">'+
+      files.map(f=>{
         const ext=f.path.split('.').pop();
         return '<a class="btn" href="#dokumenty" data-hub-file="'+esc(f.path)+'" '+(ext==='pdf'?'target="_blank" rel="noopener"':'download="'+esc(f.name)+'"')+'>'+esc(ext==='pdf'?'Otevřít PDF':'Stáhnout '+ext.toUpperCase())+'</a>';
-      }).join('')+action(canWrite?'Upravit':'Otevřít kartu',editAttr(r.id))+'</div></article>').join('')+'</div>':noResults('Tato složka je zatím prázdná.'));
+      }).join('')+action(canWrite?'Upravit':'Otevřít kartu',editAttr(record.id))+'</div></article>';
+  }).join('');
+  return heading(current?.title||'Dokumenty',current?'Dokumenty a podsložky':sections.dokumenty[2],
+    action('+ Nová složka','data-new="document-folder"','primary')+action('+ Přidat dokument','data-new="document"'))+breadcrumbs+
+    viewPicker+(children.length||items.length?'<div class="cards document-grid'+(detailed?' document-details':'')+'">'+folderCards+documentCards+'</div>':noResults('Tato složka je zatím prázdná.'));
 }
 function meetings(){
   const list=[...records.values()].filter(r=>r.kind==='meeting').sort((a,b)=>b.date.localeCompare(a.date)||a.title.localeCompare(b.title,'cs'));
@@ -790,6 +815,13 @@ async function persist(id,version,record,deleted){
 document.addEventListener('click',event=>{
   const button=event.target.closest('button');
   if(!button) return;
+  if(button.dataset.documentView&&button.dataset.documentView!==documentView){
+    documentView=button.dataset.documentView;
+    try{localStorage.setItem(documentViewKey,documentView);}catch{}
+    render();
+    main.querySelector('[data-document-view][aria-pressed="true"]')?.focus();
+    return;
+  }
   const {edit,go,map}=button.dataset;
   if(edit&&records.has(edit)) editor(records.get(edit));
   if(go) location.hash=go;
