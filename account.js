@@ -12,6 +12,11 @@ export async function loadAssignees(){
   if(!response.ok)throw Error('Seznam uživatelů se nepodařilo načíst.');
   return response.json();
 }
+export async function loadAssigneeEmails(){
+  const response=await api('/rest/v1/rpc/fcg_task_assignee_emails',{method:'POST'});
+  if(!response.ok)throw Error('E-maily držitelů se nepodařilo načíst.');
+  return response.json();
+}
 const roleLabels={admin:'Administrátor',editor:'Editor',reader:'Čtenář'};
 const fileUrls=new Map();
 const main=document.querySelector('#main');

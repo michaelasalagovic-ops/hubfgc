@@ -1,4 +1,4 @@
-import {start,isAdmin,canWrite,currentUserId,currentUserEmail,loadAssignees,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-1';
+import {start,isAdmin,canWrite,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-2';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -31,6 +31,7 @@ const heroArt=document.querySelector('#hero-art').content.firstElementChild.clon
 const bell=document.querySelector('#notification-button');
 const notifications=document.querySelector('#notifications');
 let members=[],membersReady=false,motionStarted=false;
+let assigneeEmails=new Map();
 const esc=(value='')=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uniq=list=>[...new Set(list.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'cs'));
 const isDone=r=>['Publikováno','Hotovo'].includes(r.status);
@@ -177,7 +178,8 @@ function taskOwner(task){
 function ownerField(task){
   const member=members.find(row=>row.user_id===assignedMemberId(task));
   const useOther=!member&&Boolean(task.owner||task.ownerId);
-  const choices=members.map(row=>({value:row.user_id,label:memberLabel(row)}));
+  const choices=members.map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}))
+    .sort((a,b)=>a.label.localeCompare(b.label,'cs'));
   const choice=member?.user_id||(useOther?otherOwner:'');
   return '<label class="field">Držitel úkolu<select name="ownerChoice">'+options([...choices,{value:otherOwner,label:'Jiné'}],choice,'Bez přiřazení')+'</select></label>'+
     '<div class="wide" data-custom-owner '+(useOther?'':'hidden')+'><label class="field">Jiný držitel úkolu<input name="customOwner" placeholder="Např. agentura" value="'+esc(useOther?task.owner:'')+'" '+(useOther?'required':'disabled')+'></label></div>'+
@@ -389,8 +391,10 @@ function flash(message){
   toastTimer=setTimeout(()=>toast.textContent='',3600);
 }
 async function refreshMembers(){
-  try{members=await loadAssignees();membersReady=true;}
-  catch{membersReady=false;}
+  const [people,emails]=await Promise.allSettled([loadAssignees(),isAdmin?loadAssigneeEmails():[]]);
+  membersReady=people.status==='fulfilled';
+  if(membersReady)members=people.value;
+  assigneeEmails=new Map(emails.status==='fulfilled'?emails.value.map(row=>[row.user_id,row.email]):[]);
 }
 document.addEventListener('fcg-members-changed',()=>refreshMembers().then(renderNotifications));
 async function load(){
