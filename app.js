@@ -1,8 +1,9 @@
-import {start,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-4';
+import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadRecords,saveRecord,upload,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-5';
 import {needs,topics} from './data.js';
 
 const sections = {
-  ucet:['⚙','Správa účtu',''],
+  ucet:['⚙','Nastavení',''],
+  'bez-pristupu':['','Pracovní prostor',''],
   roadmapa:['▦','Roadmapa','Úkoly napříč projektem, jejich vlastníci a termíny.'],
   dokumenty:['▤','Dokumenty','Manuály a pracovní podklady FyzioGym Cooper.'],
   meetingy:['▣','Meetingy','Zápisy ze schůzek a navazující úkoly.'],
@@ -22,8 +23,12 @@ const types=['Rozcestník','Potřeba','Služba','Obsah','Video','Praktické info
 const categories=['Migrace','Obsah','Lokální SEO','Měření','AEO / GEO'];
 const projectAreas=['Projekt','Značka','Nabídka','Provoz'];
 const webViews=['prehled','stranky','sitemap','obsah','lokalni','mereni','podklady','plan'];
-const canOpen=id=>id==='ucet'||allowedSections.includes(webViews.includes(id)?'web':id);
-const firstView=()=>['roadmapa','meetingy','dokumenty','prehled','strategie','ucet'].find(canOpen);
+const canOpen=id=>{
+  if(id==='ucet')return isAdmin;
+  if(id==='bez-pristupu')return !isAdmin&&allowedSections.length===0;
+  return allowedSections.includes(webViews.includes(id)?'web':id);
+};
+const firstView=()=>['roadmapa','meetingy','dokumenty','prehled','strategie','ucet','bez-pristupu'].find(canOpen);
 const taskSection=(category,meetingId)=>meetingId?'meetingy':categories.includes(category)?'web':'roadmapa';
 function recordSection(record){
   if(record.kind==='task')return taskSection(record.category,record.meetingId);
@@ -35,6 +40,8 @@ const filters={q:'',type:'',service:'',audience:'',status:'',priority:''};
 let view='prehled', mapMode='tree', ready=false, loading=true, toastTimer;
 const main=document.querySelector('#main');
 const dialog=document.querySelector('#editor');
+const settingsLink=document.querySelector('#settings-link');
+const signOutButton=document.querySelector('#sign-out');
 const heroArt=document.querySelector('#hero-art').content.firstElementChild.cloneNode(true);
 const bell=document.querySelector('#notification-button');
 const notifications=document.querySelector('#notifications');
@@ -379,15 +386,19 @@ function render(){
   document.querySelector('#crumb').textContent=sections[view][1];
   const link=(id,title=sections[id][1])=>'<a href="#'+id+'" '+(id===view?'aria-current="page"':'')+'><span class="nav-icon" aria-hidden="true">'+sections[id][0]+'</span>'+title+'</a>';
   document.querySelector('.brand').setAttribute('href','#'+firstView());
-  document.querySelector('#nav').innerHTML=['roadmapa','meetingy','dokumenty','prehled','strategie','ucet'].filter(canOpen).map(id=>{
+  document.querySelector('#nav').innerHTML=['roadmapa','meetingy','dokumenty','prehled','strategie'].filter(canOpen).map(id=>{
     if(id!=='prehled')return link(id);
     return link(id,'Web')+(webViews.includes(view)?'<div class="subnav">'+webViews.map(item=>link(item)).join('')+'</div>':'');
   }).join('');
+  settingsLink.hidden=!isAdmin;
+  if(view==='ucet')settingsLink.setAttribute('aria-current','page');
+  else settingsLink.removeAttribute('aria-current');
   const sync=document.querySelector('#sync');
   sync.textContent=ready?(canWrite?'Ukládání do hubu':'Režim čtení'):loading?'Načítám data…':'Připojení se nezdařilo';
   sync.classList.toggle('ready',ready);
   main.innerHTML=loading?noResults('Načítám pracovní prostor…'):({
-    ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,strategie:knowledge,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView
+    ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,strategie:knowledge,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView,
+    'bez-pristupu':()=>noResults('Zatím nemáte přístup k žádné sekci HUBu.')
   })[view]();
   const heading=main.querySelector('.heading');
   if(heading){
@@ -747,6 +758,8 @@ dialog.addEventListener('cancel',event=>{
   if(dialog.querySelector('button[type=submit]')?.disabled) event.preventDefault();
 });
 await start();
+signOutButton.onclick=signOut;
+signOutButton.hidden=false;
 window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0);});
 document.addEventListener('click',async event=>{
   const a=event.target.closest('[data-hub-file]'); if(!a)return;

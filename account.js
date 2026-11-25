@@ -195,22 +195,23 @@ export async function fileUrl(path){
   const url=URL.createObjectURL(blob);fileUrls.set(path,url);return url;
 }
 export function accountPanel(){
-  return '<div class="heading"><div><h1>Správa účtu</h1><p>Vaše role v HUBu: <strong>'+roleLabels[isAdmin?'admin':canWrite?'editor':'reader']+'</strong></p></div></div>'+
+  if(!isAdmin)return '';
+  return '<div class="heading"><div><h1>Nastavení</h1><p>Vaše role v HUBu: <strong>'+roleLabels.admin+'</strong></p></div></div>'+
     '<form class="form-grid panel account-name" data-display-name><label class="field">Zobrazované jméno v HUBu<input name="displayName" type="text" maxlength="60" required></label><button type="submit" class="btn">Uložit jméno</button><small class="wide" data-name-hint></small><p class="wide" role="status" data-name-status></p></form>'+
     '<form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
-    (isAdmin?'<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Povolené sekce</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
+    '<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Povolené sekce</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
     '<form class="form-grid panel" data-member aria-labelledby="create-member-title"><h3 class="wide" id="create-member-title">Nový přihlašovací účet</h3>'+
     '<label class="field">E-mail kolegy<input name="email" type="email" maxlength="254" required></label>'+
     '<div class="field"><label for="member-password">Počáteční heslo (alespoň 12 znaků)</label>'+
     '<div class="password-field"><input id="member-password" name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required>'+
     '<button type="button" class="btn password-toggle" data-password-toggle aria-label="Zobrazit heslo" title="Zobrazit heslo" aria-controls="member-password">'+
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/><path class="password-slash" d="m4 4 16 16"/></svg></button></div></div>'+
-    '<div class="actions wide"><button type="submit" class="btn primary">Založit účet v HUBu</button></div></form>':'')+
-    '<p role="status" data-account-status></p><button class="btn" data-signout>Odhlásit se</button>';
+    '<div class="actions wide"><button type="submit" class="btn primary">Založit účet v HUBu</button></div></form>'+
+    '<p role="status" data-account-status></p>';
 }
 export async function bindAccount(){
+  if(!isAdmin)return;
   const status=main.querySelector('[data-account-status]');
-  main.querySelector('[data-signout]').onclick=signOut;
   const nameForm=main.querySelector('[data-display-name]');
   const nameField=nameForm.elements.displayName;
   const nameStatus=nameForm.querySelector('[data-name-status]');
@@ -244,7 +245,6 @@ export async function bindAccount(){
     e.preventDefault();const form=e.currentTarget;
     try{const r=await api('/auth/v1/user',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:form.password.value})});if(!r.ok)throw Error();form.reset();status.textContent='Heslo bylo změněno.';}catch{status.textContent='Změna hesla selhala.';}
   };
-  if(!isAdmin)return;
   const list=main.querySelector('[data-members]');
   const memberForm=main.querySelector('[data-member]');
   const email=memberForm.elements.email;

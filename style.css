@@ -112,6 +112,15 @@ dialog[open]{animation:dialog-appear .18s ease-out}
 .section-access fieldset{display:grid;gap:4px;margin:0 0 8px;padding:0;border:0}
 .section-access legend{margin:0 0 5px;font-size:.82rem;font-weight:700}
 .section-access label{display:flex;gap:6px;align-items:center;white-space:nowrap}
+.rail-bottom{display:grid;gap:5px;margin-top:auto}
+.rail-control{display:flex;gap:12px;align-items:center;text-align:left;color:inherit;background:none;border:0;border-radius:9px;padding:10px 11px;font-size:.9rem;font-weight:570}
+.rail-control:hover,.rail-control[aria-current="page"]{background:#263b6a;color:white}
+.rail-control[aria-current="page"]{box-shadow:inset 3px 0 #85a9ff}
+.rail-bottom .rail-foot{margin:5px 11px 0}
+@media(max-width:650px){
+  .rail-bottom{display:flex;flex-wrap:wrap;margin-top:0}
+  .rail-control{padding:6px 9px;font-size:.82rem}
+}
 @media(prefers-reduced-motion:reduce){
   .hero-art:not(.ready) .arches,dialog[open]{animation:none}
   .hero-art canvas,.btn,.ticket,.lane,.card{transition:none}
