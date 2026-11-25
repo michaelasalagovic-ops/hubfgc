@@ -26,7 +26,13 @@ const categories=['Migrace','Obsah','Lokální SEO','Měření','AEO / GEO'];
 const projectAreas=['Projekt','Značka','Nabídka','Provoz'];
 const webViews=['prehled','stranky','sitemap','obsah','lokalni','mereni','podklady','plan'];
 const socialChannels={instagram:'Instagram',linkedin:'LinkedIn',podklady:'Podklady'};
-let socialChannel='instagram';
+const socialFormats={
+  instagram:{feed:'Feed',carousel:'Carousel',stories:'Stories',reel:'Reel'},
+  linkedin:{text:'Text',photo:'Fotka',video:'Video',document:'Dokument / carousel'}
+};
+const socialPostChannels=Object.keys(socialFormats).map(value=>({value,label:socialChannels[value]}));
+const calendarFormats=Object.entries({...socialFormats.instagram,...socialFormats.linkedin}).map(([value,label])=>({value,label}));
+let socialChannel='kalendar', calendarMonth='', calendarChannel='', calendarFormat='';
 const socialHref=channel=>'#some/'+channel;
 const canOpen=id=>{
   if(id==='prace')return allowedSections.length>0;
@@ -299,8 +305,9 @@ function taskTile(r){
     '<div class="badges flex flex-wrap gap-2">'+priorityBadge(r)+'</div>'+tagBadges(r)+(r.product?'<p>'+esc(r.product)+'</p>':'')+
     '<footer><span>'+esc(taskOwner(r)||'Bez přiřazení')+'</span><time>'+esc(dateText(r.date)||'Bez termínu')+'</time></footer></article>';
 }
+const pragueDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Prague',year:'numeric',month:'2-digit',day:'2-digit'});
 function weekBounds(now=new Date()){
-  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Prague',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
+  const today=pragueDate.format(now);
   const sunday=new Date(today+'T00:00:00Z');
   sunday.setUTCDate(sunday.getUTCDate()+(7-sunday.getUTCDay())%7);
   return [today,sunday.toISOString().slice(0,10)];
@@ -461,19 +468,78 @@ function socialAttachments(r,editable){
   }).join('')+'</div>'+(editable?'<label class="field">Přidat fotky nebo video<input name="socialFiles" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.mp4"></label>'+
     '<small>JPG, PNG, WebP nebo MP4, do 20 MB na soubor. Větší soubory přidejte odkazem z Google Disku.</small>':'')+'</section>';
 }
+const socialFormatLabel=r=>socialFormats[r.channel]?.[r.postFormat]||'Bez formátu';
+function socialFormatOptions(channel,selected){
+  return options(Object.entries(socialFormats[channel]).map(([value,label])=>({value,label})),selected,'Bez formátu');
+}
+const byPublication=(a,b)=>(a.date||'9999').localeCompare(b.date||'9999')||(a.publishTime||'99:99').localeCompare(b.publishTime||'99:99')||
+  a.title.localeCompare(b.title,'cs');
+const calendarHeading=new Intl.DateTimeFormat('cs-CZ',{month:'long',year:'numeric',timeZone:'UTC'});
+const calendarDayLabel=new Intl.DateTimeFormat('cs-CZ',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'});
+const calendarWeekdays=['Po','Út','St','Čt','Pá','So','Ne'];
+const isoDay=date=>date.toISOString().slice(0,10);
+function socialMonthDate(month){
+  return new Date(month+'-01T00:00:00Z');
+}
+function calendarPost(r){
+  return '<button type="button" class="calendar-post '+(r.channel==='instagram'?'calendar-instagram':'calendar-linkedin')+'" '+editAttr(r.id)+'>'+
+    '<span class="calendar-post-meta">'+esc(socialChannels[r.channel])+' · '+esc(socialFormatLabel(r))+
+    (r.publishTime?' · <time>'+esc(r.publishTime)+'</time>':'')+'</span><strong>'+esc(r.title)+'</strong>'+
+    socialReviewBadge(r)+'</button>';
+}
+function socialCalendar(){
+  const today=pragueDate.format(new Date());
+  const month=calendarMonth||today.slice(0,7);
+  const first=socialMonthDate(month);
+  const monthName=calendarHeading.format(first);
+  const daysInMonth=new Date(Date.UTC(first.getUTCFullYear(),first.getUTCMonth()+1,0)).getUTCDate();
+  const leading=(first.getUTCDay()+6)%7;
+  const posts=[...records.values()].filter(r=>r.kind==='social'&&Object.hasOwn(socialFormats,r.channel)&&
+    (!calendarChannel||calendarChannel===r.channel)&&(!calendarFormat||calendarFormat===(r.postFormat||'empty'))).sort(byPublication);
+  const byDay=new Map();
+  for(const post of posts){
+    if(!post.date?.startsWith(month+'-'))continue;
+    if(!byDay.has(post.date))byDay.set(post.date,[]);
+    byDay.get(post.date).push(post);
+  }
+  const days=Array.from({length:Math.ceil((leading+daysInMonth)/7)*7},(_,index)=>{
+    const day=index-leading+1;
+    if(day<1||day>daysInMonth)return '<div class="calendar-spacer" aria-hidden="true"></div>';
+    const key=month+'-'+String(day).padStart(2,'0');
+    const label=calendarDayLabel.format(new Date(key+'T00:00:00Z'));
+    return '<section class="calendar-day'+(index%7>=5?' calendar-weekend':'')+(key===today?' calendar-today':'')+'" aria-label="'+esc(label)+'">'+
+      '<div class="calendar-day-header"><time datetime="'+key+'"'+(key===today?' aria-current="date"':'')+'>'+
+      '<span class="calendar-desktop-date" aria-hidden="true">'+day+'</span><span class="calendar-mobile-date" aria-hidden="true">'+esc(label)+'</span></time>'+
+      (canWrite?'<button class="btn calendar-add" type="button" data-new-social-date="'+key+'" aria-label="Přidat příspěvek na '+esc(label)+'">+</button>':'')+'</div>'+
+      (byDay.get(key)||[]).map(calendarPost).join('')+'</section>';
+  }).join('');
+  const formats=calendarChannel?calendarFormats.filter(item=>Object.hasOwn(socialFormats[calendarChannel],item.value)):calendarFormats;
+  const unscheduled=posts.filter(r=>!r.date);
+  return '<section class="social-calendar" aria-labelledby="calendar-month-label">'+
+    '<div class="calendar-toolbar"><div class="calendar-month-nav"><h2 id="calendar-month-label" aria-live="polite">'+esc(monthName)+'</h2>'+
+    '<div class="actions">'+action('‹','data-calendar-move="-1" aria-label="Předchozí měsíc"')+
+    action('Dnes','data-calendar-move="today"')+action('›','data-calendar-move="1" aria-label="Další měsíc"')+'</div></div>'+
+    '<div class="calendar-filters"><label class="field">Kanál<select data-calendar-filter="channel">'+
+    options(socialPostChannels,calendarChannel,'Všechny kanály')+'</select></label><label class="field">Formát<select data-calendar-filter="format">'+
+    options([...formats,{value:'empty',label:'Bez formátu'}],calendarFormat,'Všechny formáty')+'</select></label></div></div>'+
+    '<div class="calendar-weekdays" aria-hidden="true">'+calendarWeekdays.map(label=>'<span>'+label+'</span>').join('')+'</div>'+
+    '<div class="calendar-days">'+days+'</div></section>'+
+    (unscheduled.length?'<section class="panel calendar-unscheduled"><h2>Bez termínu '+badge(unscheduled.length)+'</h2><div>'+
+      unscheduled.map(calendarPost).join('')+'</div></section>':'');
+}
 function social(){
   const materials=socialChannel==='podklady';
-  const items=[...records.values()].filter(r=>r.kind==='social'&&r.channel===socialChannel)
-    .sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')||a.title.localeCompare(b.title,'cs'));
-  const tabs='<nav class="topicbar social-tabs" aria-label="Kategorie SoMe">'+Object.entries(socialChannels).map(([id,label])=>
+  const items=[...records.values()].filter(r=>r.kind==='social'&&r.channel===socialChannel).sort(byPublication);
+  const tabs='<nav class="topicbar social-tabs" aria-label="Kategorie SoMe">'+Object.entries({kalendar:'Kalendář',...socialChannels}).map(([id,label])=>
     '<a class="btn'+(id===socialChannel?' primary':'')+'" href="'+socialHref(id)+'"'+(id===socialChannel?' aria-current="page"':'')+'>'+label+'</a>').join('')+'</nav>';
   const cards=items.map(r=>'<article class="card"><div><h2><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button></h2>'+
-    (materials?'':'<div class="badges">'+socialReviewBadge(r)+(r.date?'<time datetime="'+esc(r.date)+'">Publikace '+dateText(r.date)+'</time>':'')+'</div>'+
+    (materials?'':'<div class="badges">'+badge(socialFormatLabel(r))+socialReviewBadge(r)+(r.date?'<time datetime="'+esc(r.date)+'">Publikace '+dateText(r.date)+(r.publishTime?' · '+esc(r.publishTime):'')+'</time>':'')+'</div>'+
       (r.review?.state==='pending'?'<p class="fine">Čeká na '+esc(socialMember(r.review.reviewerId))+'</p>':'')+
       (socialMedia(r).length?'<p class="fine">Přílohy ('+socialMedia(r).length+')</p>':''))+
     (r.description?'<p class="social-copy">'+esc(r.description)+'</p>':'')+'</div>'+driveAnchors(driveLinks(r))+'</article>');
   return heading('SoMe',sections.some[2],action(materials?'+ Přidat podklad':'+ Nový příspěvek','data-new="social"','primary'))+
-    tabs+(items.length?'<div class="cards">'+cards.join('')+'</div>':noResults(materials?'Zatím tu nejsou žádné podklady.':'Zatím tu nejsou žádné příspěvky.'));
+    tabs+(socialChannel==='kalendar'?socialCalendar():items.length?'<div class="cards">'+cards.join('')+'</div>':
+      noResults(materials?'Zatím tu nejsou žádné podklady.':'Zatím tu nejsou žádné příspěvky.'));
 }
 
 function documentFolders(){
@@ -562,10 +628,29 @@ function knowledge(){
 }
 main.addEventListener('click',event=>{
   const button=event.target.closest('button');
+  const move=button?.dataset.calendarMove;
+  if(move){
+    const today=pragueDate.format(new Date()).slice(0,7);
+    const month=socialMonthDate(calendarMonth||today);
+    if(move!=='today')month.setUTCMonth(month.getUTCMonth()+Number(move));
+    calendarMonth=move==='today'?today:isoDay(month).slice(0,7);
+    render();
+    main.querySelector('[data-calendar-move="'+move+'"]')?.focus();
+  }
   if(button?.dataset.mode){roadMode=button.dataset.mode;render();}
   if(button?.dataset.topic){topic=button.dataset.topic;render();}
 });
 main.addEventListener('change',async event=>{
+  const calendarFilter=event.target.dataset.calendarFilter;
+  if(calendarFilter){
+    if(calendarFilter==='channel'){
+      calendarChannel=event.target.value;
+      if(calendarChannel&&calendarFormat!=='empty'&&!Object.hasOwn(socialFormats[calendarChannel],calendarFormat))calendarFormat='';
+    }else calendarFormat=event.target.value;
+    render();
+    main.querySelector('[data-calendar-filter="'+calendarFilter+'"]')?.focus();
+    return;
+  }
   const {quickTask,quickField}=event.target.dataset;
   if(quickTask&&ready&&canWrite){
     const task=records.get(quickTask);
@@ -658,8 +743,8 @@ function render(){
 function route(){
   const hash=location.hash.slice(1);
   const documentRoute=hash.match(/^dokumenty\/([a-zA-Z0-9-]{1,80})$/);
-  const socialRoute=hash.match(/^some\/(instagram|linkedin|podklady)$/);
-  socialChannel=socialRoute?.[1]||'instagram';
+  const socialRoute=hash.match(/^some\/(kalendar|instagram|linkedin|podklady)$/);
+  socialChannel=socialRoute?.[1]||'kalendar';
   const section=documentRoute?'dokumenty':socialRoute?'some':hash;
   folderView=documentRoute?.[1]||'';
   view=Object.hasOwn(sections,section)?section:firstView();
@@ -735,7 +820,7 @@ function descendantOf(page,ancestor){
   }
   return false;
 }
-function editor(record,defaultType,meetingId,pageId,socialId){
+function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
   if(!canWrite&&!record)return;
   if(!ready){flash('Pro úpravy je potřeba obnovit připojení.');return;}
   const folder=record?.isFolder===true||defaultType==='document-folder';
@@ -747,7 +832,8 @@ function editor(record,defaultType,meetingId,pageId,socialId){
   const task=record?.kind==='task'||['task','measurement','project','social-task'].includes(defaultType);
   const today=new Date();
   const localDate=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
-  const r=record??(socialEntry?{kind:'social',id:crypto.randomUUID(),channel:socialChannel,title:'',status:'Návrh'}:doc?{kind:'document',id:crypto.randomUUID(),title:'',folderId:folderView,...(folder?{isFolder:true}:{files:[]})}:meeting?{kind:'meeting',id:crypto.randomUUID(),date:localDate,title:'',notes:''}:{id:crypto.randomUUID(),title:'',type:defaultType==='video'?'Video':defaultType==='local'?'Lokální SEO':'Obsah',
+  const draftChannel=socialChannel==='kalendar'?(calendarChannel||'instagram'):socialChannel;
+  const r=record??(socialEntry?{kind:'social',id:crypto.randomUUID(),channel:draftChannel,date:socialDate,title:'',status:'Návrh'}:doc?{kind:'document',id:crypto.randomUUID(),title:'',folderId:folderView,...(folder?{isFolder:true}:{files:[]})}:meeting?{kind:'meeting',id:crypto.randomUUID(),date:localDate,title:'',notes:''}:{id:crypto.randomUUID(),title:'',type:defaultType==='video'?'Video':defaultType==='local'?'Lokální SEO':'Obsah',
     service:defaultType==='video'?'Koučink':'',parent:defaultType==='video'?'videos':defaultType==='local'?'branches':'',
     category:socialId?'SoMe':defaultType==='measurement'?'Měření':'Obsah',status:'Návrh',priority:'Střední',...(note?{kind:'note',category:topic}:{}),...(defaultType==='project'?{category:'Projekt'}:{}),...(task?{kind:'task',...(meetingId?{meetingId}:{}),...(pageId?{pageId}:{}),...(socialId?{socialId}:{})}:{links:[]})});
   if(!canOpen(recordSection(r)))return;
@@ -773,9 +859,10 @@ function editor(record,defaultType,meetingId,pageId,socialId){
   }else if(note){
     fields=group('Podklad',input(r,'title','Název',{wide:true,required:true})+input(r,'category','Oblast',{values:topics,required:true})+area(r,'description','Popis a současný stav')+area(r,'insight','Poznatky a možnosti rozšíření')+area(r,'source','Zdroj a datum ověření'),true);
   }else if(socialEntry){
-    const channels=Object.entries(socialChannels).filter(([id])=>id!=='podklady').map(([value,label])=>({value,label}));
     fields=group(materials?'Podklad':'Draft příspěvku',input(r,'title','Název',{wide:true,required:true})+
-      (materials?'':input(r,'channel','Kanál',{values:channels,required:true})+input(r,'date','Navrhovaný termín publikace',{type:'date'}))+
+      (materials?'':input(r,'channel','Kanál',{values:socialPostChannels,required:true})+
+        '<label class="field">Formát příspěvku<select name="postFormat">'+socialFormatOptions(r.channel,r.postFormat)+'</select></label>'+
+        input(r,'date','Navrhovaný termín publikace',{type:'date'})+input(r,'publishTime','Čas publikace (Praha, volitelný)',{type:'time'}))+
       area(r,'description',materials?'Popis podkladu':'Text příspěvku')+
       (record&&!materials?'<div class="wide">'+action('Zkopírovat text','data-copy-social-text')+'</div>':''),true);
     if(socialPost){
@@ -872,6 +959,10 @@ function editor(record,defaultType,meetingId,pageId,socialId){
   }
   const revision=versions.get(r.id)??0;
   const blockList=form.querySelector('[data-content-blocks]');
+  if(socialPost){
+    const {channel,postFormat}=form.elements;
+    channel.onchange=()=>{postFormat.innerHTML=socialFormatOptions(channel.value,postFormat.value);};
+  }
   if(task){
     const {ownerChoice,customOwner}=form.elements;
     ownerChoice.onchange=()=>{
@@ -1057,6 +1148,10 @@ async function saveSocialPost(form,fd,record,update,revision,isChanged,addTask){
   const decision=['approved','returned','published'].includes(action);
   const reviewer=fd.get('socialReviewer');
   const note=fd.get('decisionNote')?.trim()||'';
+  const isNew=revision===0;
+  if(!Object.hasOwn(socialFormats[update.channel],update.postFormat))delete update.postFormat;
+  if(update.publishTime&&!update.date){showError('K času publikace doplňte datum.');return;}
+  if(!update.publishTime)delete update.publishTime;
   if(decision&&isChanged()){showError('Nejdřív uložte změny draftu. Rozhodnutí platí pro uloženou verzi.');return;}
   if(action==='returned'&&!note){showError('Napište, co je potřeba upravit.');return;}
   if(action==='pending'&&(!socialReviewers.includes(reviewer)||!update.date)){
@@ -1082,7 +1177,7 @@ async function saveSocialPost(form,fd,record,update,revision,isChanged,addTask){
       update={...record,review:{...record.review,state:action,...(action==='published'?{}:{note})}};
     }else if(action==='pending'){
       update.review={state:'pending',reviewerId:reviewer,requestedBy:currentUserId()};
-    }else if(['pending','approved'].includes(previous)&&['title','description','channel','date','driveLinks','media'].some(key=>
+    }else if(['pending','approved'].includes(previous)&&['title','description','channel','date','postFormat','publishTime','driveLinks','media'].some(key=>
       JSON.stringify(update[key]??null)!==JSON.stringify(record[key]??null))){
       delete update.review;
       update.status='Návrh';
@@ -1090,7 +1185,12 @@ async function saveSocialPost(form,fd,record,update,revision,isChanged,addTask){
 
     if(!await persist(record.id,revision,update,false))return;
     if(action||previous==='approved')await load();
-    if(view==='some'&&update.channel!==socialChannel)location.hash=socialHref(update.channel);
+    if(view==='some'&&socialChannel==='kalendar'){
+      if(update.date&&(isNew||update.date!==record.date)){
+        calendarMonth=update.date.slice(0,7);
+        render();
+      }
+    }else if(view==='some'&&update.channel!==socialChannel)location.hash=socialHref(update.channel);
     if(addTask)editor(null,'social-task',null,null,record.id);
   }catch(error){showError(error.message);}
   finally{controls.forEach(element=>element.disabled=false);}
@@ -1146,6 +1246,7 @@ document.addEventListener('click',event=>{
     editor(null,'social-task',null,null,button.dataset.newSocialTask);
   }
   if(button.dataset.new) editor(null,button.dataset.new);
+  if(button.dataset.newSocialDate) editor(null,'social',null,null,null,button.dataset.newSocialDate);
   if(map){mapMode=map;render();}
   if(button.hasAttribute('data-close')) dialog.close();
   if(button.hasAttribute('data-retry')) load();
