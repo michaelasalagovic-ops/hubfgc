@@ -4,7 +4,7 @@ let session=JSON.parse(sessionStorage.getItem('fcg-session')||'null');
 let refreshing;
 export let isAdmin=false;
 export let canWrite=false;
-export const sectionLabels={roadmapa:'Roadmapa',meetingy:'Meetingy',dokumenty:'Dokumenty',web:'Web',strategie:'Značka a nabídka'};
+export const sectionLabels={roadmapa:'Roadmapa',meetingy:'Meetingy',dokumenty:'Dokumenty',web:'Web',strategie:'Značka a nabídka',some:'SoMe'};
 export let allowedSections=[];
 export async function refreshSections(){
   const response=await api('/rest/v1/rpc/fcg_my_sections',{method:'POST'});
