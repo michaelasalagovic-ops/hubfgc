@@ -658,16 +658,26 @@ function meetingInsight(record,open=false){
   return '<details class="meeting-insight"'+(open?' open':'')+'><summary><strong>Insight</strong><span>'+esc(status)+'</span></summary>'+
     (sections?'<div class="meeting-insight-body">'+sections+'</div>':'')+'</details>';
 }
+const openMeetings=new Set();
+main.addEventListener('toggle',event=>{
+  const meeting=event.target;
+  const id=meeting.dataset?.meetingDisclosure;
+  if(!id)return;
+  if(meeting.open)openMeetings.add(id);
+  else openMeetings.delete(id);
+},true);
 function meetings(){
   const list=[...records.values()].filter(r=>r.kind==='meeting').sort((a,b)=>b.date.localeCompare(a.date)||a.title.localeCompare(b.title,'cs'));
   const tasks=allTasks();
   const cards=list.map(r=>{
     const linked=tasks.filter(t=>t.meetingId===r.id);
-    return '<article class="card meeting-card"><time datetime="'+esc(r.date)+'">'+esc(dateText(r.date))+'</time><h2>'+esc(r.title)+'</h2>'+
+    return '<details class="card meeting-card" data-meeting-disclosure="'+esc(r.id)+'"'+(openMeetings.has(r.id)?' open':'')+'>'+
+      '<summary class="meeting-summary"><h2><time datetime="'+esc(r.date)+'">'+esc(dateText(r.date))+'</time><span>'+esc(r.title)+'</span></h2></summary>'+
+      '<div class="meeting-content">'+
       '<p class="meeting-notes">'+esc(r.notes)+'</p>'+
       (linked.length?'<h3>To Do</h3>'+linked.map(t=>'<button class="list-row" '+editAttr(t.id)+'><strong>'+esc(t.title)+'</strong>'+statusBadge(t)+'</button>').join(''):'')+
       driveAnchors(driveLinks(r))+'<div class="actions">'+action(canWrite?'Upravit zápis':'Otevřít zápis',editAttr(r.id))+action('+ Přidat úkol','data-meeting-task="'+esc(r.id)+'"')+'</div>'+
-      meetingInsight(r)+'</article>';
+      meetingInsight(r)+'</div></details>';
   });
   return heading('Meetingy',sections.meetingy[2],action('+ Nový zápis','data-new="meeting"','primary'))+
     (list.length?'<div class="meeting-timeline grid gap-4">'+cards.join('')+'</div>':noResults('Zatím tu nejsou žádné zápisy ze schůzek.'));
