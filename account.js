@@ -224,14 +224,15 @@ export async function fileUrl(path){
   const url=URL.createObjectURL(blob);fileUrls.set(path,url);return url;
 }
 export function accountPanel(){
-  const profile='<form class="form-grid panel account-name" data-display-name><label class="field">Zobrazované jméno v HUBu<input name="displayName" type="text" maxlength="60" required></label><button type="submit" class="btn">Uložit jméno</button><small class="wide" data-name-hint></small><p class="wide" role="status" data-name-status></p></form>';
+  const profile='<form class="form-grid dashboard-panel account-name" data-display-name aria-labelledby="profile-title"><h2 class="wide" id="profile-title">Můj profil</h2>'+
+    '<label class="field">Zobrazované jméno v HUBu<input name="displayName" type="text" maxlength="60" required></label><button type="submit" class="btn">Uložit jméno</button><small class="wide" data-name-hint></small><p class="wide" role="status" data-name-status></p></form>';
   const heading='<div class="heading"><div><h1>Nastavení</h1></div></div>';
   if(!isAdmin)return heading+profile;
   return '<div class="heading"><div><h1>Nastavení</h1><p>Vaše role v HUBu: <strong>'+roleLabels.admin+'</strong></p></div></div>'+
-    profile+
-    '<form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
-    '<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Povolené sekce</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
-    '<form class="form-grid panel" data-member aria-labelledby="create-member-title"><h3 class="wide" id="create-member-title">Nový přihlašovací účet</h3>'+
+    '<div class="dashboard-settings">'+profile+
+    '<form class="form-grid dashboard-panel" data-password aria-labelledby="password-title"><h2 id="password-title" class="wide">Přihlášení</h2><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form></div>'+
+    '<section class="dashboard-panel dashboard-members"><h2>Uživatelé HUBu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Povolené sekce</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div></section>'+
+    '<form class="form-grid dashboard-panel" data-member aria-labelledby="create-member-title"><h2 class="wide" id="create-member-title">Nový přihlašovací účet</h2>'+
     '<label class="field">E-mail kolegy<input name="email" type="email" maxlength="254" required></label>'+
     '<div class="field"><label for="member-password">Počáteční heslo (alespoň 12 znaků)</label>'+
     '<div class="password-field"><input id="member-password" name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required>'+

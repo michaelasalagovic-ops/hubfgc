@@ -1,4 +1,4 @@
-import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,loadMeetingInsightStatus,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-15';
+import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,loadMeetingInsightStatus,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-19';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -111,6 +111,22 @@ function options(values,current,placeholder){
 function heading(title,description,actions=''){
   return '<div class="heading"><div><h1>'+esc(title)+'</h1><p>'+esc(description)+'</p></div><div class="actions">'+actions+'</div></div>';
 }
+function dashboardSummary(label,count,tone,attr){
+  return '<button type="button" class="dashboard-summary dashboard-'+tone+'" '+attr+'>'+
+    '<strong>'+count+'</strong><span>'+esc(label)+'</span>'+
+    '<span class="dashboard-summary-arrow" aria-hidden="true">›</span></button>';
+}
+function dashboardSummaries(label,items){
+  return '<div class="dashboard-summaries" role="group" aria-label="'+esc(label)+'">'+
+    items.map(item=>dashboardSummary(...item)).join('')+'</div>';
+}
+function dashboardCounts(label,items){
+  return '<dl class="dashboard-counts" aria-label="'+esc(label)+'">'+items.map(([name,count])=>
+    '<div><dt>'+esc(name)+'</dt><dd>'+count+'</dd></div>').join('')+'</dl>';
+}
+function dashboardPanel(title,content,className=''){
+  return '<section class="dashboard-panel '+className+'"><h2>'+esc(title)+'</h2>'+content+'</section>';
+}
 function rowsTable(list){
   if(!list.length) return noResults('Filtrům neodpovídá žádná stránka.');
   return '<div class="table-wrap"><table class="table"><thead><tr><th>Stránka / cílová URL</th><th>Typ</th><th>Služba</th><th>Stav</th><th>Priorita</th><th>Vlastník / termín</th></tr></thead><tbody>'+list.map(r=>'<tr><td>'+pageInfo(r)+'</td><td>'+esc(r.type)+'</td><td>'+esc(r.service)+'</td><td>'+statusBadge(r)+'</td><td>'+priorityBadge(r)+'</td><td>'+esc(taskOwner(r)||'—')+'<span class="url">'+dateText(r.date)+'</span></td></tr>').join('')+'</tbody></table></div>';
@@ -130,8 +146,6 @@ function overview(){
   const progress=pages.length?Math.round(done/pages.length*100):0;
   const priorityPages=['assessment','pricing','prague','acute'].map(id=>records.get(id)).filter(r=>r?.open);
   const featured=[...new Set([...priorityPages,...incomplete])].slice(0,4);
-  const stat=(number,label,tone,attr)=>'<button type="button" class="dashboard-summary dashboard-'+tone+'" '+attr+'>'+
-    '<strong>'+number+'</strong><span>'+label+'</span><span class="web-dashboard-arrow" aria-hidden="true">›</span></button>';
   const row=(r,detail,meta)=>'<li><button type="button" class="dashboard-item" '+editAttr(r.id)+'>'+
     '<span class="dashboard-item-name"><strong>'+esc(r.title)+'</strong><small>'+esc(detail)+'</small></span>'+
     '<span class="dashboard-item-meta">'+meta+'</span><span class="dashboard-item-arrow" aria-hidden="true">›</span></button></li>';
@@ -140,13 +154,13 @@ function overview(){
     r.date?'<time datetime="'+esc(r.date)+'"'+(r.date<today?' class="dashboard-overdue"':'')+'>'+
       esc(r.date<today?'Po termínu · '+dateText(r.date):r.date===today?'Dnes':dateText(r.date))+'</time>':'<span>Bez termínu</span>')).join('');
   const review=pages.filter(r=>['K revizi','Připraveno'].includes(r.status)).length;
-  return '<div class="work-dashboard web-dashboard">'+
-    heading('Web a SEO','Stav webu, chybějící podklady a nejbližší kroky.',action('+ Přidat stránku','data-new="page"','primary'))+
-    '<div class="dashboard-summaries" role="group" aria-label="Souhrn webu">'+
-      stat(pages.length,'Stránek v sitemapě','week',goAttr('sitemap'))+
-      stat(done,'Publikováno / hotovo','undated','data-web-pages="done"')+
-      stat(incomplete.length,'Stránek k doplnění','urgent',goAttr('podklady'))+
-      stat(tasks.length,'Otevřených úkolů','review',goAttr('plan'))+'</div>'+
+  return heading('Web a SEO','Stav webu, chybějící podklady a nejbližší kroky.',action('+ Přidat stránku','data-new="page"','primary'))+
+    dashboardSummaries('Souhrn webu',[
+      ['Stránek v sitemapě',pages.length,'week',goAttr('sitemap')],
+      ['Publikováno / hotovo',done,'undated','data-web-pages="done"'],
+      ['Stránek k doplnění',incomplete.length,'urgent',goAttr('podklady')],
+      ['Otevřených úkolů',tasks.length,'week',goAttr('plan')]
+    ])+
     '<section class="dashboard-panel web-progress"><div><h2>Stav přípravy webu</h2>'+
       '<p><strong>'+progress+' %</strong> dokončeno <span>· '+done+' z '+pages.length+' stránek'+
       ' · '+review+' k revizi nebo připraveno</span></p>'+
@@ -163,7 +177,7 @@ function overview(){
         const id=['pain','return','start','sport'][i];
         return '<button type="button" class="web-need" '+editAttr(id)+(records.has(id)?'':' disabled')+'>'+
           esc(need)+'<span aria-hidden="true">›</span></button>';
-      }).join('')+'</div></section></div>';
+      }).join('')+'</div></section>';
 }
 function filterRows(){
   const q=filters.q.trim().toLocaleLowerCase('cs');
@@ -173,7 +187,7 @@ function filterRows(){
 function pageList(){
   const configs=[['type',types,'Typ stránky'],['service',uniq(listed().map(r=>r.service)),'Služba'],['audience',uniq(listed().map(r=>r.audience)),'Cílová skupina'],['status',[{value:'done',label:'Publikováno / hotovo'},...statuses],'Stav'],['priority',priorities,'Priorita']];
   return heading('Stránky',sections.stranky[2],action('+ Přidat stránku','data-new="page"','primary'))+
-    '<section class="filters"><div class="filter-grid"><input type="search" aria-label="Hledat v kartách stránek" placeholder="Hledat název, URL nebo téma…" data-filter="q" value="'+esc(filters.q)+'">'+configs.map(([key,values,label])=>'<select data-filter="'+key+'" aria-label="'+label+'">'+options(values,filters[key],label)+'</select>').join('')+'</div><div class="filter-meta"><span id="result-count"></span>'+action('Zrušit filtry','data-clear','link')+'</div></section><div id="results"></div>';
+    '<section class="dashboard-panel filters" aria-label="Filtry stránek"><div class="filter-grid"><input type="search" aria-label="Hledat v kartách stránek" placeholder="Hledat název, URL nebo téma…" data-filter="q" value="'+esc(filters.q)+'">'+configs.map(([key,values,label])=>'<select data-filter="'+key+'" aria-label="'+label+'">'+options(values,filters[key],label)+'</select>').join('')+'</div><div class="filter-meta"><span id="result-count" aria-live="polite"></span>'+action('Zrušit filtry','data-clear','link')+'</div></section><div id="results"></div>';
 }
 function fillResults(){
   const filtered=filterRows();
@@ -196,31 +210,39 @@ function sitemap(){
   const table='<div class="table-wrap mapping"><table class="table"><thead><tr><th>Stránka</th><th>Stávající URL</th><th>Cílová URL</th><th>Migrační akce</th></tr></thead><tbody>'+
     pages.map(r=>'<tr><td><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button></td><td>'+esc(r.oldUrl||'—')+'</td><td>'+esc(r.url||'—')+'</td><td>'+esc(r.redirect||'—')+'</td></tr>').join('')+'</tbody></table></div>';
   return heading('Sitemap a URL',sections.sitemap[2],action('+ Přidat stránku','data-new="page"','primary'))+
-    '<div class="actions" style="margin-bottom:12px">'+switches+'</div>'+
-    (mapMode==='tree'?'<div class="panel tree">'+(tree||'Žádné stránky v sitemapě.')+'</div>':table);
+    dashboardCounts('Sitemap a URL',[['Stránky',pages.length],['S cílovou URL',pages.filter(r=>r.url).length],['Bez cílové URL',pages.filter(r=>!r.url).length]])+
+    '<div class="actions dashboard-toolbar" role="group" aria-label="Zobrazení sitemapy">'+switches+'</div>'+
+    (mapMode==='tree'?'<div class="dashboard-panel tree">'+(tree||'Žádné stránky v sitemapě.')+'</div>':table);
 }
 function projectSections(){
   const pageCard=r=>card(r,'<p>'+esc(r.message)+'</p><span class="url">'+esc(r.url)+'</span>');
-  const group=(title,list)=>'<h2 class="group-title">'+title+'</h2>'+cardGroup(list,pageCard);
+  const group=(title,list)=>dashboardPanel(title,cardGroup(list,pageCard));
   if(view==='lokalni') return heading('Lokální SEO',sections.lokalni[2],action('+ Přidat pracoviště','data-new="local"','primary'))+
     cardGroup(listed().filter(r=>r.type==='Lokální SEO'),pageCard)+groupTasks('Kontrola lokálních údajů',planned().filter(r=>r.category==='Lokální SEO'));
   return heading('Obsahové sekce',sections.obsah[2],action('+ Přidat video','data-new="video"','primary')+action('+ Přidat stránku','data-new="page"'))+
-    group('Videa a edukace',listed().filter(r=>r.type==='Video'))+
+    '<div class="dashboard-stack">'+group('Videa a edukace',listed().filter(r=>r.type==='Video'))+
     group('Anglické lekce',listed().filter(r=>r.id==='english'||r.audience==='Anglicky mluvící klienti'))+
-    group('Lékaři a spolupracující pracoviště',listed().filter(r=>r.id==='partners'||r.parent==='partners'));
+    group('Lékaři a spolupracující pracoviště',listed().filter(r=>r.id==='partners'||r.parent==='partners'))+'</div>';
 }
 function groupTasks(title,list){
   return (title?'<h2 class="group-title">'+title+'</h2>':'')+cardGroup(list,r=>card(r,'<p>'+esc(r.description)+'</p><p><strong>Kontrola</strong> '+esc(r.check)+'</p>',taskOwner(r)||r.date?'<span class="url">'+esc([taskOwner(r),dateText(r.date)].filter(Boolean).join(' · '))+'</span>':''));
 }
 function taskView(){
   const measurement=view==='mereni';
+  const tasks=planned().filter(r=>!measurement||r.category==='Měření');
+  const active=tasks.filter(r=>!isDone(r)).sort(compareDue);
+  const done=tasks.filter(isDone);
+  const [today]=weekBounds();
   return heading(measurement?'Měření':'Plán dalších kroků',sections[view][2],action('+ Přidat úkol','data-new="'+(measurement?'measurement':'task')+'"','primary'))+
-    (measurement?groupTasks('',planned().filter(r=>r.category==='Měření').sort(sortByPriority)):
-      groupTasks('Otevřené kroky',tasksPending())+groupTasks('Dokončené',planned().filter(isDone)));
+    dashboardCounts('Stav úkolů',[['Otevřené',active.length],['Po termínu',active.filter(r=>r.date&&r.date<today).length],['Dokončené',done.length]])+
+    '<div class="dashboard-stack">'+dashboardPanel('Otevřené úkoly',groupTasks('',active))+
+    dashboardPanel('Dokončené',groupTasks('',done))+'</div>';
 }
 function gapView(){
+  const pages=missing();
   return heading('Chybějící podklady',sections.podklady[2])+
-    cardGroup(missing(),r=>card(r,(r.open?'<p>'+esc(r.open)+'</p>':'')+'<div class="badges">'+gaps(r).map(g=>badge(g,'open')).join('')+'</div>'));
+    dashboardCounts('Chybějící podklady',[['Stránky k doplnění',pages.length],['Vysoká priorita',pages.filter(r=>r.priority==='Vysoká').length]])+
+    cardGroup(pages,r=>card(r,(r.open?'<p>'+esc(r.open)+'</p>':'')+'<div class="badges">'+gaps(r).map(g=>badge(g,'open')).join('')+'</div>'));
 }
 const lanes=[
   {title:'K naplánování',states:['Návrh']},
@@ -417,7 +439,7 @@ function myWork(){
     action(group.label,'data-work-filter="'+group.id+'" aria-controls="dashboard-tasks" aria-pressed="'+(workFilter===group.id)+'"')).join('');
   const pilot=canOpen('web')&&records.get('assessment');
   const unassigned=isAdmin?active.filter(task=>!assignedMemberId(task)&&!taskOwner(task)):[];
-  return '<div class="work-dashboard">'+heading('Moje práce',sections.prace[2],pilot?action('Pilot · Vstupní vyšetření',editAttr(pilot.id)):'')+
+  return heading('Moje práce',sections.prace[2],pilot?action('Pilot · Vstupní vyšetření',editAttr(pilot.id)):'')+
     '<div class="dashboard-summaries" role="group" aria-label="Souhrn práce">'+summary.join('')+'</div>'+
     '<div class="dashboard-columns"><section class="dashboard-panel dashboard-task-panel" id="dashboard-tasks" aria-labelledby="dashboard-task-title">'+
     '<h2 id="dashboard-task-title">Moje úkoly <span>'+mine.length+'</span></h2><div class="dashboard-filters" role="group" aria-label="Filtrovat moje úkoly">'+controls+'</div>'+
@@ -428,14 +450,17 @@ function myWork(){
     (returned.length?'<section class="dashboard-panel dashboard-returned-panel"><h2>Vráceno k úpravě <span>'+returned.length+'</span></h2>'+
       dashboardItems(returned,today,'')+'</section>':'')+'</aside></div>'+
     (isAdmin?'<details class="dashboard-panel dashboard-admin"><summary>Týmové úkoly bez držitele <span>'+unassigned.length+'</span></summary>'+
-      dashboardItems(unassigned,today,'Všechny otevřené úkoly mají držitele.')+'</details>':'')+'</div>';
+      dashboardItems(unassigned,today,'Všechny otevřené úkoly mají držitele.')+'</details>':'');
 }
 function roadmap(){
   const tasks=allTasks();
   const [today,sunday]=weekBounds();
-  const matchesPreset=task=>!roadPreset||(!isDone(task)&&(
-    roadPreset==='week'?task.date>=today&&task.date<=sunday:
-    roadPreset==='unassigned'?!assignedMemberId(task)&&!taskOwner(task):task.status==='Čeká na podklady'));
+  const active=task=>!isDone(task);
+  const overdue=task=>active(task)&&task.date&&task.date<today;
+  const week=task=>active(task)&&task.date>=today&&task.date<=sunday;
+  const presets={active,overdue,week,done:isDone,
+    unassigned:task=>active(task)&&!assignedMemberId(task)&&!taskOwner(task),
+    waiting:task=>active(task)&&task.status==='Čeká na podklady'};
   const owners=filterChoices(tasks.map(taskOwner),'Bez přiřazení');
   const tags=filterChoices(tasks.flatMap(taskTags),'Bez štítku');
   if(!owners.some(item=>item.value===ownerFilter))ownerFilter='';
@@ -445,12 +470,13 @@ function roadmap(){
     const owner=name?'value:'+normalized(name):'empty';
     const tagValues=taskTags(r).map(tag=>'value:'+normalized(tag));
     const matchesTag=!tagFilter||(tagFilter==='empty'?tagValues.length===0:tagValues.includes(tagFilter));
-    return matchesPreset(r)&&(!areaFilter||r.category===areaFilter)&&(!ownerFilter||owner===ownerFilter)&&matchesTag;
+    return (!roadPreset||presets[roadPreset](r))&&(!areaFilter||r.category===areaFilter)&&(!ownerFilter||owner===ownerFilter)&&matchesTag;
   }).sort(compareDue);
   const control=(label,mode)=>action(label,'data-mode="'+mode+'" aria-pressed="'+(roadMode===mode)+'"',mode===roadMode?'primary':'');
   let result;
   if(roadMode==='list'){
-    result=taskList(selected,ready&&canWrite);
+    result=(selected.length?'<div class="work-row road-list-labels" aria-hidden="true"><span>Úkol</span><span>Stav</span><span>Držitel</span><span>Termín</span></div>':'')+
+      taskList(selected,ready&&canWrite);
   }else if(roadMode==='board'){
     result='<div class="lanes">'+lanes.map(({title,states})=>{
       const items=selected.filter(r=>states.includes(r.status));
@@ -461,8 +487,19 @@ function roadmap(){
     for(const r of selected){const key=r.date||'';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);}
     result='<div class="timeline">'+([...groups].map(([date,items])=>'<section><h2>'+esc(dateText(date)||'Bez termínu')+'</h2><div>'+items.map(r=>'<div class="time-row"><div><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button>'+tagBadges(r)+'</div><span>'+esc(taskOwner(r)||'Bez přiřazení')+'</span>'+statusBadge(r)+'</div>').join('')+'</div></section>').join('')||noResults('Výběru neodpovídají žádné úkoly.'))+'</div>';
   }
+  const summary=(id,label,tone)=>[label,tasks.filter(presets[id]).length,tone,
+    'data-road-summary="'+id+'" aria-pressed="'+(roadPreset===id&&!areaFilter&&!ownerFilter&&!tagFilter)+'"'];
+  const presetOptions=[
+    ['active','Otevřené'],['overdue','Po termínu'],['week','Tento týden'],
+    ['unassigned','Bez držitele'],['waiting','Čeká na podklady'],['done','Hotovo']
+  ].map(([value,label])=>({value,label}));
   return heading('Roadmapa',sections.roadmapa[2],action('+ Přidat úkol','data-new="project"','primary'))+
-    '<div class="road-tools"><div class="actions">'+control('Seznam','list')+control('Podle stavu','board')+control('Časová osa','time')+'</div><div class="actions"><select aria-label="Rychlý filtr" data-road-filter="preset">'+options([{value:'week',label:'Tento týden'},{value:'unassigned',label:'Bez držitele'},{value:'waiting',label:'Čeká na podklady'}],roadPreset,'Všechny úkoly')+'</select><select aria-label="Oblast úkolů" data-road-filter="area">'+options(uniq(tasks.map(r=>r.category)),areaFilter,'Všechny oblasti')+'</select><select aria-label="Držitel úkolu" data-road-filter="owner">'+options(owners,ownerFilter,'Všichni držitelé')+'</select><select aria-label="Štítek úkolu" data-road-filter="tag">'+options(tags,tagFilter,'Všechny štítky')+'</select></div></div>'+
+    dashboardSummaries('Stav úkolů',[
+      summary('active','Otevřené','week'),summary('overdue','Po termínu','urgent'),
+      summary('week','Tento týden','week'),summary('done','Hotovo','undated')
+    ])+
+    '<div class="road-tools dashboard-toolbar"><div class="actions" role="group" aria-label="Zobrazení roadmapy">'+control('Seznam','list')+control('Podle stavu','board')+control('Časová osa','time')+'</div><div class="actions"><select aria-label="Rychlý filtr" data-road-filter="preset">'+options(presetOptions,roadPreset,'Všechny úkoly')+'</select><select aria-label="Oblast úkolů" data-road-filter="area">'+options(uniq(tasks.map(r=>r.category)),areaFilter,'Všechny oblasti')+'</select><select aria-label="Držitel úkolu" data-road-filter="owner">'+options(owners,ownerFilter,'Všichni držitelé')+'</select><select aria-label="Štítek úkolu" data-road-filter="tag">'+options(tags,tagFilter,'Všechny štítky')+'</select></div></div>'+
+    '<p class="dashboard-result-count" role="status">'+selected.length+' z '+tasks.length+' úkolů</p>'+
     (roadMode==='board'&&canWrite?'<p class="boardhelp">Kartu přetáhněte do dalšího sloupce nebo otevřete úkol a změňte stav.</p>':'')+result;
 }
 const driveHosts=new Set(['drive.google.com','docs.google.com','sheets.google.com','slides.google.com']);
@@ -601,8 +638,10 @@ function socialCalendar(){
 }
 function social(){
   const materials=socialChannel==='podklady';
-  const items=[...records.values()].filter(r=>r.kind==='social'&&r.channel===socialChannel).sort(byPublication);
-  const tabs='<nav class="topicbar social-tabs" aria-label="Kategorie SoMe">'+Object.entries({kalendar:'Kalendář',...socialChannels}).map(([id,label])=>
+  const entries=[...records.values()].filter(r=>r.kind==='social');
+  const items=entries.filter(r=>r.channel===socialChannel).sort(byPublication);
+  const posts=socialChannel==='kalendar'?entries.filter(r=>r.channel!=='podklady'):items;
+  const tabs='<nav class="topicbar social-tabs dashboard-toolbar" aria-label="Kategorie SoMe">'+Object.entries({kalendar:'Kalendář',...socialChannels}).map(([id,label])=>
     '<a class="btn'+(id===socialChannel?' primary':'')+'" href="'+socialHref(id)+'"'+(id===socialChannel?' aria-current="page"':'')+'>'+label+'</a>').join('')+'</nav>';
   const cards=items.map(r=>'<article class="card"><div><h2><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button></h2>'+
     (materials?'':'<div class="badges">'+badge(socialFormatLabel(r))+socialReviewBadge(r)+(r.date?'<time datetime="'+esc(r.date)+'">Publikace '+dateText(r.date)+(r.publishTime?' · '+esc(r.publishTime):'')+'</time>':'')+'</div>'+
@@ -610,6 +649,13 @@ function social(){
       (socialMedia(r).length?'<p class="fine">Přílohy ('+socialMedia(r).length+')</p>':''))+
     (r.description?'<p class="social-copy">'+esc(r.description)+'</p>':'')+'</div>'+driveAnchors(driveLinks(r))+'</article>');
   return heading('SoMe',sections.some[2],action(materials?'+ Přidat podklad':'+ Nový příspěvek','data-new="social"','primary'))+
+    (materials?dashboardCounts('Podklady',[['Podklady',items.length]]):
+      dashboardCounts('Příspěvky',[
+        ['S plánovaným termínem',posts.filter(r=>r.date&&!isDone(r)).length],
+        ['Čeká na schválení',posts.filter(r=>r.review?.state==='pending').length],
+        ['Bez termínu',posts.filter(r=>!r.date&&!isDone(r)).length],
+        ['Publikované',posts.filter(isDone).length]
+      ]))+
     tabs+(socialChannel==='kalendar'?socialCalendar():items.length?'<div class="cards">'+cards.join('')+'</div>':
       noResults(materials?'Zatím tu nejsou žádné podklady.':'Zatím tu nejsou žádné příspěvky.'));
 }
@@ -655,6 +701,7 @@ function documentList(){
   const children=[...folders.values()].filter(folder=>documentParent(folder,folders)===folderView);
   const documents=[...records.values()].filter(r=>r.kind==='document'&&!r.isFolder);
   const items=documents.filter(r=>documentParent(r,folders)===folderView);
+  const folderDocuments=folderView?documents.filter(r=>folderPath(documentParent(r,folders),folders).some(folder=>folder.id===folderView)):documents;
   const detailed=documentView==='details';
   const counts=detailed?folderFileCounts(documents,folders):new Map();
   const count=number=>detailed?'<span class="document-file-count">Počet souborů: '+number+'</span>':'';
@@ -675,8 +722,11 @@ function documentList(){
       }).join('')+action(canWrite?'Upravit':'Otevřít kartu',editAttr(record.id))+'</div></article>';
   }).join('');
   return heading(current?.title||'Dokumenty',current?'Dokumenty a podsložky':sections.dokumenty[2],
-    action('+ Nová složka','data-new="document-folder"','primary')+action('+ Přidat dokument','data-new="document"'))+breadcrumbs+
-    viewPicker+(children.length||items.length?'<div class="cards document-grid'+(detailed?' document-details':'')+'">'+folderCards+documentCards+'</div>':noResults('Tato složka je zatím prázdná.'));
+    action('+ Nová složka','data-new="document-folder"','primary')+action('+ Přidat dokument','data-new="document"'))+
+    dashboardCounts('Obsah složky',[['Složky',children.length],['Dokumenty včetně podsložek',folderDocuments.length],
+      ['Odkazy na Disk',folderDocuments.reduce((sum,r)=>sum+driveLinks(r).length,0)]])+
+    '<div class="dashboard-toolbar dashboard-document-toolbar">'+breadcrumbs+viewPicker+'</div>'+
+    (children.length||items.length?'<div class="cards document-grid'+(detailed?' document-details':'')+'">'+folderCards+documentCards+'</div>':noResults('Tato složka je zatím prázdná.'));
 }
 function meetingInsight(record,open=false){
   const insight=record.meetingInsight;
@@ -704,6 +754,9 @@ main.addEventListener('toggle',event=>{
 function meetings(){
   const list=[...records.values()].filter(r=>r.kind==='meeting').sort((a,b)=>b.date.localeCompare(a.date)||a.title.localeCompare(b.title,'cs'));
   const tasks=allTasks();
+  const meetingIds=new Set(list.map(r=>r.id));
+  const linkedTasks=tasks.filter(t=>meetingIds.has(t.meetingId)&&!isDone(t));
+  const pending=list.filter(r=>r.notes?.trim()&&r.meetingInsight?.sourceRevision!==(r.insightRevision??0));
   const cards=list.map(r=>{
     const linked=tasks.filter(t=>t.meetingId===r.id);
     const date=dateText(r.date);
@@ -717,14 +770,19 @@ function meetings(){
       meetingInsight(r)+'</div></details>';
   });
   return heading('Meetingy',sections.meetingy[2],action('+ Nový zápis','data-new="meeting"','primary'))+
-    (list.length?'<div class="meeting-timeline grid gap-4">'+cards.join('')+'</div>':noResults('Zatím tu nejsou žádné zápisy ze schůzek.'));
+    dashboardCounts('Schůzky',[['Zápisy',list.length],['Otevřené úkoly ze schůzek',linkedTasks.length],['Čeká na Insight',pending.length]])+
+    dashboardPanel('Zápisy ze schůzek',list.length?'<div class="meeting-timeline grid gap-4">'+cards.join('')+'</div>':
+      noResults('Zatím tu nejsou žádné zápisy ze schůzek.'));
 }
 function knowledge(){
-  const data=[...records.values()].filter(r=>r.kind==='note'&&r.category===topic);
+  const notes=[...records.values()].filter(r=>r.kind==='note');
+  const data=notes.filter(r=>r.category===topic);
   return heading('Značka a nabídka',sections.strategie[2],action('+ Přidat podklad','data-new="note"','primary'))+
-    '<div class="topicbar">'+topics.map(t=>action(t,'data-topic="'+esc(t)+'" aria-pressed="'+(t===topic)+'"',t===topic?'primary':'')).join('')+'</div>'+
-    '<div class="kbgrid">'+data.map(r=>'<article class="kbcard"><h2><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button></h2><p>'+esc(r.description)+'</p>'+
-      driveAnchors(driveLinks(r))+(r.insight?'<div class="insight"><strong>Podnět k rozvoji</strong><p>'+esc(r.insight)+'</p></div>':'')+action('Upravit podklad',editAttr(r.id),'link')+'</article>').join('')+'</div>'+(!data.length?noResults('V této oblasti zatím nejsou podklady.'):'');
+    '<div class="topicbar dashboard-toolbar" role="group" aria-label="Oblasti značky a nabídky">'+topics.map(t=>
+      action(t+' · '+notes.filter(r=>r.category===t).length,'data-topic="'+esc(t)+'" aria-pressed="'+(t===topic)+'"',t===topic?'primary':'')).join('')+'</div>'+
+    (data.length?'<div class="kbgrid">'+data.map(r=>'<article class="kbcard"><h2><button class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button></h2><p>'+esc(r.description)+'</p>'+
+      driveAnchors(driveLinks(r))+(r.insight?'<div class="insight"><strong>Podnět k rozvoji</strong><p>'+esc(r.insight)+'</p></div>':'')+'</article>').join('')+'</div>':
+      noResults('V této oblasti zatím nejsou podklady.'));
 }
 main.addEventListener('click',event=>{
   if(event.target.closest('[data-work-approvals]')){
@@ -735,6 +793,14 @@ main.addEventListener('click',event=>{
     return;
   }
   const button=event.target.closest('button');
+  if(button?.dataset.roadSummary){
+    const preset=button.dataset.roadSummary;
+    roadPreset=preset;
+    areaFilter=ownerFilter=tagFilter='';
+    render();
+    main.querySelector('[data-road-summary="'+preset+'"]')?.focus();
+    return;
+  }
   if(button?.dataset.workFilter){
     const filter=button.dataset.workFilter;
     const region=button.classList.contains('dashboard-summary')?'.dashboard-summaries':'.dashboard-filters';
@@ -826,7 +892,8 @@ function render(){
     history.replaceState(null,'','#'+view);
   }
   document.querySelector('#crumb').textContent=sections[view][1];
-  const link=(id,title=sections[id][1])=>'<a href="#'+id+'" '+(id===view?'aria-current="page"':'')+'><span class="nav-icon" aria-hidden="true">'+sections[id][0]+'</span>'+title+'</a>';
+  const link=(id,title=sections[id][1])=>'<a href="#'+id+'" '+(id===view?'aria-current="page"':id==='prehled'&&webViews.includes(view)?'class="section-active"':'')+
+    '><span class="nav-icon" aria-hidden="true">'+sections[id][0]+'</span>'+title+'</a>';
   document.querySelector('.brand').setAttribute('href','#'+firstView());
   document.querySelector('#nav').innerHTML=['prace','roadmapa','meetingy','dokumenty','prehled','some','strategie'].filter(canOpen).map(id=>{
     if(id!=='prehled')return link(id);
@@ -838,10 +905,12 @@ function render(){
   const sync=document.querySelector('#sync');
   sync.textContent=ready?(canWrite?'Ukládání do hubu':'Režim čtení'):loading?'Načítám data…':'Připojení se nezdařilo';
   sync.classList.toggle('ready',ready);
-  main.innerHTML=loading?noResults('Načítám pracovní prostor…'):({
+  const renderView=({
     prace:myWork,ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,some:social,strategie:knowledge,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView,
     'bez-pristupu':()=>noResults('Zatím nemáte přístup k žádné sekci HUBu.')
-  })[view]();
+  })[view];
+  main.innerHTML='<div class="work-dashboard">'+
+    (loading?noResults('Načítám pracovní prostor…'):renderView())+'</div>';
   const heading=main.querySelector('.heading');
   if(heading){
     heading.append(heroArt);
