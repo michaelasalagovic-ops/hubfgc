@@ -671,9 +671,11 @@ function meetings(){
   const tasks=allTasks();
   const cards=list.map(r=>{
     const linked=tasks.filter(t=>t.meetingId===r.id);
+    const date=dateText(r.date);
+    const topic=r.title&&r.title!=='Schůzka '+date?'<h3>'+esc(r.title)+'</h3>':'';
     return '<details class="card meeting-card" data-meeting-disclosure="'+esc(r.id)+'"'+(openMeetings.has(r.id)?' open':'')+'>'+
-      '<summary class="meeting-summary"><h2><time datetime="'+esc(r.date)+'">'+esc(dateText(r.date))+'</time><span>'+esc(r.title)+'</span></h2></summary>'+
-      '<div class="meeting-content">'+
+      '<summary class="meeting-summary"><h2><time datetime="'+esc(r.date)+'">'+esc(date)+'</time></h2></summary>'+
+      '<div class="meeting-content">'+topic+
       '<p class="meeting-notes">'+esc(r.notes)+'</p>'+
       (linked.length?'<h3>To Do</h3>'+linked.map(t=>'<button class="list-row" '+editAttr(t.id)+'><strong>'+esc(t.title)+'</strong>'+statusBadge(t)+'</button>').join(''):'')+
       driveAnchors(driveLinks(r))+'<div class="actions">'+action(canWrite?'Upravit zápis':'Otevřít zápis',editAttr(r.id))+action('+ Přidat úkol','data-meeting-task="'+esc(r.id)+'"')+'</div>'+
