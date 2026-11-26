@@ -157,6 +157,11 @@ export async function loadRecords(){
     if(page.length<500)return records;
   }
 }
+export async function loadMeetingInsightStatus(){
+  const response=await api('/rest/v1/fcg_records?hub_section=eq.meetingy&deleted=eq.false&record->>kind=eq.meeting&select=id,version,source:record->meetingInsight');
+  if(!response.ok)throw Error('Přehled Insight se nepodařilo načíst.');
+  return response.json();
+}
 export async function saveRecord(id,version,record,deleted,exists){
   const edit=exists;
   const path='/rest/v1/fcg_records'+(edit?'?id=eq.'+encodeURIComponent(id)+'&version=eq.'+version:'');

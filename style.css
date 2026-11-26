@@ -319,3 +319,13 @@ dialog{width:min(720px,calc(100% - 24px));border-radius:13px}
   .dashboard-summary{padding:10px}
   .dashboard-summary strong{font-size:1.6rem}
 }
+
+.meeting-insight{margin-top:10px;border:1px solid #aebfdb;border-left:4px solid #31569a;border-radius:9px;background:#eaf1fc;color:#173561;padding:10px 12px}
+.meeting-insight summary{cursor:pointer;line-height:1.45}
+.meeting-insight summary strong{font-size:.9rem;margin-inline-end:8px}
+.meeting-insight summary span{font-size:.76rem;color:#344e72}
+.meeting-insight-body{display:grid;gap:9px;margin-top:11px}
+.meeting-insight-body section{background:#f8faff;border-radius:6px;padding:8px 10px}
+.meeting-insight-body h4{font-size:.85rem;margin:0 0 5px}
+.meeting-insight-body ul{margin:0;padding-inline-start:1.25rem;line-height:1.55;overflow-wrap:anywhere}
+.meeting-insight-body li+li{margin-top:4px}

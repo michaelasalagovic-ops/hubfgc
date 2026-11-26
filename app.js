@@ -1,4 +1,4 @@
-import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-14';
+import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,loadMeetingInsightStatus,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-15';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -643,6 +643,21 @@ function documentList(){
     action('+ Nová složka','data-new="document-folder"','primary')+action('+ Přidat dokument','data-new="document"'))+breadcrumbs+
     viewPicker+(children.length||items.length?'<div class="cards document-grid'+(detailed?' document-details':'')+'">'+folderCards+documentCards+'</div>':noResults('Tato složka je zatím prázdná.'));
 }
+function meetingInsight(record,open=false){
+  const insight=record.meetingInsight;
+  const sourceRevision=record.insightRevision??0;
+  const hasNotes=Boolean(record.notes?.trim());
+  const current=hasNotes&&insight?.sourceRevision===sourceRevision;
+  const groups=current||hasNotes&&insight?[
+    ['Co z toho plyne',insight.analysis],['Nápady k ověření',insight.ideas],['Doporučené další kroky',insight.next]
+  ]:[];
+  const sections=groups.filter(([,items])=>Array.isArray(items)&&items.length).map(([title,items])=>
+    '<section><h4>'+title+'</h4><ul>'+items.map(item=>'<li>'+esc(item)+'</li>').join('')+'</ul></section>').join('');
+  const status=!hasNotes?'Doplňte poznámky a uložte zápis.':current?'Aktuální k uloženému zápisu':
+    sections?'Čeká na přepočet · zobrazená je předchozí analýza':'Čeká na analýzu po uložení';
+  return '<details class="meeting-insight"'+(open?' open':'')+'><summary><strong>Insight</strong><span>'+esc(status)+'</span></summary>'+
+    (sections?'<div class="meeting-insight-body">'+sections+'</div>':'')+'</details>';
+}
 function meetings(){
   const list=[...records.values()].filter(r=>r.kind==='meeting').sort((a,b)=>b.date.localeCompare(a.date)||a.title.localeCompare(b.title,'cs'));
   const tasks=allTasks();
@@ -651,7 +666,8 @@ function meetings(){
     return '<article class="card meeting-card"><time datetime="'+esc(r.date)+'">'+esc(dateText(r.date))+'</time><h2>'+esc(r.title)+'</h2>'+
       '<p class="meeting-notes">'+esc(r.notes)+'</p>'+
       (linked.length?'<h3>To Do</h3>'+linked.map(t=>'<button class="list-row" '+editAttr(t.id)+'><strong>'+esc(t.title)+'</strong>'+statusBadge(t)+'</button>').join(''):'')+
-      driveAnchors(driveLinks(r))+'<div class="actions">'+action(canWrite?'Upravit zápis':'Otevřít zápis',editAttr(r.id))+action('+ Přidat úkol','data-meeting-task="'+esc(r.id)+'"')+'</div></article>';
+      driveAnchors(driveLinks(r))+'<div class="actions">'+action(canWrite?'Upravit zápis':'Otevřít zápis',editAttr(r.id))+action('+ Přidat úkol','data-meeting-task="'+esc(r.id)+'"')+'</div>'+
+      meetingInsight(r)+'</article>';
   });
   return heading('Meetingy',sections.meetingy[2],action('+ Nový zápis','data-new="meeting"','primary'))+
     (list.length?'<div class="meeting-timeline grid gap-4">'+cards.join('')+'</div>':noResults('Zatím tu nejsou žádné zápisy ze schůzek.'));
@@ -980,6 +996,7 @@ function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
       (canWrite?action('+ Přidat úkol','data-new-page-task="'+esc(r.id)+'"'):'')+'</section>'+fields;
   }
   if(!folder&&!socialPost)fields=driveSection(r,editable)+fields;
+  if(meeting)fields+=meetingInsight(r,true);
   dialog.innerHTML='<form id="record-form"><header class="dialog-head"><h2 id="editor-title">'+esc(record?r.title:folder?'Nová složka':doc?'Nový dokument':meeting?'Nový zápis':(note||(socialEntry&&materials))?'Nový podklad':socialEntry?'Nový příspěvek':task?'Nový úkol':'Nová stránka')+'</h2>'+
     action('Zavřít','data-close')+'</header><div class="dialog-body">'+fields+'</div>'+
     '<footer class="dialog-foot"><div>'+(record&&isAdmin&&!folder?action('Smazat','data-delete','danger'):'')+'</div>'+
@@ -1134,6 +1151,9 @@ function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
     if(task)update.tags=parseTags(fd.get('tags')||'');
     if(meeting){
       update.title ||= 'Schůzka '+dateText(update.date);
+      if(['title','date','notes'].some(key=>(update[key]||'')!==(r[key]||''))){
+        update.insightRevision=(r.insightRevision??0)+1;
+      }
       const addTask=event.submitter?.hasAttribute('data-save-and-add');
       if(await persist(r.id,revision,update,false) && addTask) editor(null,'project',r.id);
       return;
@@ -1202,6 +1222,18 @@ function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
   dialog.showModal();
   previews();
 }
+let refreshingMeetingInsights=false;
+async function refreshMeetingInsights(){
+  if(view!=='meetingy'||!ready||loading||dialog.open||document.hidden||refreshingMeetingInsights)return;
+  if(![...records.values()].some(r=>r.kind==='meeting'&&r.notes?.trim()&&r.meetingInsight?.sourceRevision!==(r.insightRevision??0)))return;
+  refreshingMeetingInsights=true;
+  try{
+    const rows=await loadMeetingInsightStatus();
+    if(view!=='meetingy'||dialog.open||loading)return;
+    if(rows.some(row=>row.source&&(row.version>(versions.get(row.id)||0))))await load();
+  }catch{}finally{refreshingMeetingInsights=false;}
+}
+setInterval(refreshMeetingInsights,60_000);
 async function saveSocialPost(form,fd,record,update,revision,isChanged,addTask){
   const action=form.dataset.socialAction;
   const previous=record.review?.state;
