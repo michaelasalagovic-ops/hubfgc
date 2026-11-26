@@ -334,29 +334,60 @@ function taskList(tasks,editable=false){
         '<span>'+statusBadge(task)+'</span><span>'+esc(taskOwner(task)||'Bez držitele')+'</span><span>'+esc(dateText(task.date)||'Bez termínu')+'</span>')+'</article>';
   }).join('')+'</div>';
 }
+let workFilter='all';
+function dashboardItems(items,today,empty){
+  if(!items.length)return '<p class="dashboard-empty">'+esc(empty)+'</p>';
+  return '<ul class="dashboard-items">'+items.map(item=>{
+    const socialPost=item.kind==='social';
+    const area=socialPost?'SoMe · '+socialChannels[item.channel]:item.category;
+    const due=item.date?'<time datetime="'+esc(item.date)+'"'+(item.date<today?' class="dashboard-overdue"':'')+'>'+
+      esc(item.date===today?'Dnes':dateText(item.date))+'</time>':'<span>Bez termínu</span>';
+    return '<li><button type="button" class="dashboard-item" '+editAttr(item.id)+'>'+
+      '<span class="dashboard-item-name"><strong>'+esc(item.title)+'</strong><small>'+esc(area)+'</small></span>'+
+      '<span class="dashboard-item-meta">'+(socialPost?socialReviewBadge(item):statusBadge(item))+due+'</span>'+
+      '<span class="dashboard-item-arrow" aria-hidden="true">›</span></button></li>';
+  }).join('')+'</ul>';
+}
 function myWork(){
   const [today,sunday]=weekBounds();
   const userId=currentUserId();
   const active=allTasks().filter(task=>!isDone(task)).sort(compareDue);
   const approvals=active.filter(task=>userId&&task.status==='K revizi'&&task.reviewerId===userId);
-  const mine=active.filter(task=>assignedMemberId(task)===userId&&!approvals.includes(task));
-  const groups=[
-    ['Čeká na moje schválení',approvals],
-    ['Po termínu',mine.filter(task=>task.date&&task.date<today)],
-    ['Tento týden',mine.filter(task=>task.date>=today&&task.date<=sunday)],
-    ['Později',mine.filter(task=>task.date>sunday)],
-    ['Bez termínu',mine.filter(task=>!task.date)]
+  const mine=active.filter(task=>userId&&assignedMemberId(task)===userId&&!approvals.includes(task));
+  const posts=[...records.values()].filter(r=>r.kind==='social');
+  const review=[...approvals,...posts.filter(r=>userId&&r.review?.state==='pending'&&r.review.reviewerId===userId)].sort(compareDue);
+  const returned=posts.filter(r=>userId&&r.review?.state==='returned'&&r.review.requestedBy===userId).sort(compareDue);
+  const taskGroups=[
+    {id:'overdue',label:'Po termínu',tasks:mine.filter(task=>task.date&&task.date<today),tone:'urgent',icon:'!'},
+    {id:'week',label:'Tento týden',tasks:mine.filter(task=>task.date>=today&&task.date<=sunday),tone:'week',icon:'→'},
+    {id:'later',label:'Později',tasks:mine.filter(task=>task.date>sunday)},
+    {id:'undated',label:'Bez termínu',tasks:mine.filter(task=>!task.date),tone:'undated',icon:'–'}
   ];
-  if(isAdmin)groups.push(['Týmové úkoly bez držitele',active.filter(task=>!assignedMemberId(task)&&!taskOwner(task))]);
+  const summary=taskGroups.filter(group=>group.tone).map(group=>
+    '<button type="button" class="dashboard-summary dashboard-'+group.tone+'" data-work-filter="'+group.id+'" aria-controls="dashboard-tasks" aria-pressed="'+
+    (workFilter===group.id)+'"><span class="dashboard-summary-icon" aria-hidden="true">'+group.icon+'</span><strong>'+group.tasks.length+
+    '</strong><span>'+group.label+'</span></button>');
+  summary.splice(2,0,'<a class="dashboard-summary dashboard-review" href="#dashboard-approvals" data-work-approvals>'+
+    '<span class="dashboard-summary-icon" aria-hidden="true">✓</span><strong>'+review.length+'</strong><span>K mému schválení</span></a>');
+  const shownGroups=taskGroups.filter(group=>(workFilter==='all'||group.id===workFilter)&&group.tasks.length);
+  const groupContent=shownGroups.map(group=>'<section class="dashboard-group dashboard-group-'+group.id+'"><h3>'+group.label+
+    ' <span>'+group.tasks.length+'</span></h3>'+dashboardItems(group.tasks,today,'')+'</section>').join('');
+  const controls=[{id:'all',label:'Všechny'},...taskGroups].map(group=>
+    action(group.label,'data-work-filter="'+group.id+'" aria-controls="dashboard-tasks" aria-pressed="'+(workFilter===group.id)+'"')).join('');
   const pilot=canOpen('web')&&records.get('assessment');
-  const socialWork=[...records.values()].filter(r=>r.kind==='social'&&userId&&(
-    (r.review?.state==='pending'&&r.review.reviewerId===userId)||(r.review?.state==='returned'&&r.review.requestedBy===userId)));
-  return heading('Moje práce',sections.prace[2])+
-    (pilot?'<section class="panel work-pilot"><div><h2>Pilotní stránka · Vstupní vyšetření</h2><p class="fine">Podklady, odborná revize, publikace a kontrola výsledků.</p></div>'+action('Otevřít pilotní kartu',editAttr('assessment'))+'</section>':'')+
-    (socialWork.length?'<section class="panel work-group"><h2>Příspěvky SoMe '+badge(socialWork.length)+'</h2><div class="work-list">'+socialWork.sort(compareDue).map(r=>
-      '<article class="work-row"><div><button type="button" class="item-title" '+editAttr(r.id)+'>'+esc(r.title)+'</button><small>'+esc(socialChannels[r.channel])+'</small></div>'+
-      socialReviewBadge(r)+'<span>'+esc(dateText(r.date)||'Bez termínu')+'</span></article>').join('')+'</div></section>':'')+
-    groups.map(([title,tasks])=>'<section class="panel work-group"><h2>'+title+' '+badge(tasks.length)+'</h2>'+taskList(tasks)+'</section>').join('');
+  const unassigned=isAdmin?active.filter(task=>!assignedMemberId(task)&&!taskOwner(task)):[];
+  return '<div class="work-dashboard">'+heading('Moje práce',sections.prace[2],pilot?action('Pilot · Vstupní vyšetření',editAttr(pilot.id)):'')+
+    '<div class="dashboard-summaries" role="group" aria-label="Souhrn práce">'+summary.join('')+'</div>'+
+    '<div class="dashboard-columns"><section class="dashboard-panel dashboard-task-panel" id="dashboard-tasks" aria-labelledby="dashboard-task-title">'+
+    '<h2 id="dashboard-task-title">Moje úkoly <span>'+mine.length+'</span></h2><div class="dashboard-filters" role="group" aria-label="Filtrovat moje úkoly">'+controls+'</div>'+
+    (groupContent||'<p class="dashboard-empty" role="status">'+(workFilter==='all'?'Žádné otevřené úkoly.':'V tomto období nejsou žádné úkoly.')+'</p>')+'</section>'+
+    '<aside class="dashboard-side" aria-label="Schvalování a vrácené příspěvky">'+
+    '<section class="dashboard-panel dashboard-approval-panel" id="dashboard-approvals" aria-labelledby="dashboard-approval-title" tabindex="-1">'+
+    '<h2 id="dashboard-approval-title">K mému schválení <span>'+review.length+'</span></h2>'+dashboardItems(review,today,'Nic nečeká na vaše schválení.')+'</section>'+
+    (returned.length?'<section class="dashboard-panel dashboard-returned-panel"><h2>Vráceno k úpravě <span>'+returned.length+'</span></h2>'+
+      dashboardItems(returned,today,'')+'</section>':'')+'</aside></div>'+
+    (isAdmin?'<details class="dashboard-panel dashboard-admin"><summary>Týmové úkoly bez držitele <span>'+unassigned.length+'</span></summary>'+
+      dashboardItems(unassigned,today,'Všechny otevřené úkoly mají držitele.')+'</details>':'')+'</div>';
 }
 function roadmap(){
   const tasks=allTasks();
@@ -627,7 +658,22 @@ function knowledge(){
       driveAnchors(driveLinks(r))+(r.insight?'<div class="insight"><strong>Podnět k rozvoji</strong><p>'+esc(r.insight)+'</p></div>':'')+action('Upravit podklad',editAttr(r.id),'link')+'</article>').join('')+'</div>'+(!data.length?noResults('V této oblasti zatím nejsou podklady.'):'');
 }
 main.addEventListener('click',event=>{
+  if(event.target.closest('[data-work-approvals]')){
+    event.preventDefault();
+    const approvals=main.querySelector('#dashboard-approvals');
+    approvals.focus({preventScroll:true});
+    approvals.scrollIntoView({block:'nearest'});
+    return;
+  }
   const button=event.target.closest('button');
+  if(button?.dataset.workFilter){
+    const filter=button.dataset.workFilter;
+    const region=button.classList.contains('dashboard-summary')?'.dashboard-summaries':'.dashboard-filters';
+    workFilter=filter;
+    render();
+    main.querySelector(region+' [data-work-filter="'+filter+'"]')?.focus();
+    return;
+  }
   const move=button?.dataset.calendarMove;
   if(move){
     const today=pragueDate.format(new Date()).slice(0,7);
