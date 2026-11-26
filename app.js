@@ -122,21 +122,56 @@ function cardGroup(list,formatter){
   return list.length?'<div class="cards">'+list.map(formatter).join('')+'</div>':noResults('V této sekci zatím nejsou žádné položky.');
 }
 function overview(){
-  const stat=(number,label,target)=>'<button class="stat" '+goAttr(target)+'><b>'+number+'</b><span>'+label+'</span></button>';
-  const row=(r,detail)=>'<button class="list-row" '+editAttr(r.id)+'><span><strong>'+esc(r.title)+'</strong><small>'+esc(detail)+'</small></span><span aria-hidden="true">→</span></button>';
-  return heading('Obsahový a SEO hub',sections.prehled[2],action('+ Přidat stránku','data-new="page"','primary'))+
-    '<section class="hero"><h2>Čtyři vstupní potřeby klientů</h2><div class="need-grid">'+needs.map((need,i)=>'<button class="need" '+editAttr(['pain','return','start','sport'][i])+'>'+esc(need)+'<span aria-hidden="true">↗</span></button>').join('')+'</div></section>'+
-    '<section class="stats">'+stat(listed().length,'Stránek v sitemapě','stranky')+stat(listed().filter(isDone).length,'Publikováno / hotovo','stranky')+stat(missing().length,'Stránek k doplnění','podklady')+stat(tasksPending().length,'Otevřených úkolů','plan')+'</section>'+
-    '<div class="overview"><section class="panel"><h2>Co ověřit jako první</h2>'+(['assessment','pricing','prague','acute'].map(id=>records.get(id)).filter(r=>r?.open).map(r=>row(r,r.open)).join('')||'<p class="fine">V hlavních kartách zbývají jen další podklady podle přehledu.</p>')+action('Všechny chybějící podklady →',goAttr('podklady'),'link')+'</section>'+
-    '<section class="panel"><h2>Nejbližší kroky</h2>'+(tasksPending().slice(0,4).map(r=>row(r,[r.category,taskOwner(r),dateText(r.date)].filter(Boolean).join(' · '))).join('')||'<p class="fine">Všechny úkoly jsou hotové.</p>')+action('Otevřít plán kroků →',goAttr('plan'),'link')+'</section></div>';
+  const pages=listed();
+  const done=pages.filter(isDone).length;
+  const incomplete=missing();
+  const tasks=tasksPending().sort(compareDue);
+  const [today]=weekBounds();
+  const progress=pages.length?Math.round(done/pages.length*100):0;
+  const priorityPages=['assessment','pricing','prague','acute'].map(id=>records.get(id)).filter(r=>r?.open);
+  const featured=[...new Set([...priorityPages,...incomplete])].slice(0,4);
+  const stat=(number,label,tone,attr)=>'<button type="button" class="dashboard-summary dashboard-'+tone+'" '+attr+'>'+
+    '<strong>'+number+'</strong><span>'+label+'</span><span class="web-dashboard-arrow" aria-hidden="true">›</span></button>';
+  const row=(r,detail,meta)=>'<li><button type="button" class="dashboard-item" '+editAttr(r.id)+'>'+
+    '<span class="dashboard-item-name"><strong>'+esc(r.title)+'</strong><small>'+esc(detail)+'</small></span>'+
+    '<span class="dashboard-item-meta">'+meta+'</span><span class="dashboard-item-arrow" aria-hidden="true">›</span></button></li>';
+  const prioritiesList=featured.map(r=>row(r,r.open||gaps(r).join(' · '),priorityBadge(r))).join('');
+  const taskListHtml=tasks.slice(0,5).map(r=>row(r,[r.category,taskOwner(r)].filter(Boolean).join(' · '),
+    r.date?'<time datetime="'+esc(r.date)+'"'+(r.date<today?' class="dashboard-overdue"':'')+'>'+
+      esc(r.date<today?'Po termínu · '+dateText(r.date):r.date===today?'Dnes':dateText(r.date))+'</time>':'<span>Bez termínu</span>')).join('');
+  const review=pages.filter(r=>['K revizi','Připraveno'].includes(r.status)).length;
+  return '<div class="work-dashboard web-dashboard">'+
+    heading('Web a SEO','Stav webu, chybějící podklady a nejbližší kroky.',action('+ Přidat stránku','data-new="page"','primary'))+
+    '<div class="dashboard-summaries" role="group" aria-label="Souhrn webu">'+
+      stat(pages.length,'Stránek v sitemapě','week',goAttr('sitemap'))+
+      stat(done,'Publikováno / hotovo','undated','data-web-pages="done"')+
+      stat(incomplete.length,'Stránek k doplnění','urgent',goAttr('podklady'))+
+      stat(tasks.length,'Otevřených úkolů','review',goAttr('plan'))+'</div>'+
+    '<section class="dashboard-panel web-progress"><div><h2>Stav přípravy webu</h2>'+
+      '<p><strong>'+progress+' %</strong> dokončeno <span>· '+done+' z '+pages.length+' stránek'+
+      ' · '+review+' k revizi nebo připraveno</span></p>'+
+      '<progress aria-label="Podíl dokončených stránek" max="100" value="'+progress+'">'+progress+' %</progress></div>'+
+      '<div class="actions">'+action('Všechny stránky','data-web-pages="all"')+action('Měření',goAttr('mereni'))+'</div></section>'+
+    '<div class="web-dashboard-columns"><section class="dashboard-panel web-priority-panel"><h2>Co ověřit jako první</h2>'+
+      (prioritiesList?'<ul class="dashboard-items">'+prioritiesList+'</ul>':'<p class="dashboard-empty">Žádné stránky k doplnění.</p>')+
+      action('Všechny chybějící podklady',goAttr('podklady'),'link')+'</section>'+
+    '<section class="dashboard-panel web-next-panel"><h2>Nejbližší úkoly</h2>'+
+      (taskListHtml?'<ul class="dashboard-items">'+taskListHtml+'</ul>':'<p class="dashboard-empty">Žádné otevřené úkoly k webu.</p>')+
+      action('Otevřít plán kroků',goAttr('plan'),'link')+'</section></div>'+
+    '<section class="dashboard-panel web-client-needs"><h2>Čtyři vstupní potřeby klientů</h2><div class="web-need-grid">'+
+      needs.map((need,i)=>{
+        const id=['pain','return','start','sport'][i];
+        return '<button type="button" class="web-need" '+editAttr(id)+(records.has(id)?'':' disabled')+'>'+
+          esc(need)+'<span aria-hidden="true">›</span></button>';
+      }).join('')+'</div></section></div>';
 }
 function filterRows(){
   const q=filters.q.trim().toLocaleLowerCase('cs');
-  return listed().filter(r=>Object.keys(filters).every(key=>key==='q'||!filters[key]||r[key]===filters[key]))
+  return listed().filter(r=>Object.keys(filters).every(key=>key==='q'||!filters[key]||(key==='status'&&filters[key]==='done'?isDone(r):r[key]===filters[key])))
     .filter(r=>!q||[r.title,r.url,r.oldUrl,r.topics,r.need,r.message].some(value=>String(value??'').toLocaleLowerCase('cs').includes(q)));
 }
 function pageList(){
-  const configs=[['type',types,'Typ stránky'],['service',uniq(listed().map(r=>r.service)),'Služba'],['audience',uniq(listed().map(r=>r.audience)),'Cílová skupina'],['status',statuses,'Stav'],['priority',priorities,'Priorita']];
+  const configs=[['type',types,'Typ stránky'],['service',uniq(listed().map(r=>r.service)),'Služba'],['audience',uniq(listed().map(r=>r.audience)),'Cílová skupina'],['status',[{value:'done',label:'Publikováno / hotovo'},...statuses],'Stav'],['priority',priorities,'Priorita']];
   return heading('Stránky',sections.stranky[2],action('+ Přidat stránku','data-new="page"','primary'))+
     '<section class="filters"><div class="filter-grid"><input type="search" aria-label="Hledat v kartách stránek" placeholder="Hledat název, URL nebo téma…" data-filter="q" value="'+esc(filters.q)+'">'+configs.map(([key,values,label])=>'<select data-filter="'+key+'" aria-label="'+label+'">'+options(values,filters[key],label)+'</select>').join('')+'</div><div class="filter-meta"><span id="result-count"></span>'+action('Zrušit filtry','data-clear','link')+'</div></section><div id="results"></div>';
 }
@@ -1339,6 +1374,12 @@ document.addEventListener('click',event=>{
     try{localStorage.setItem(documentViewKey,documentView);}catch{}
     render();
     main.querySelector('[data-document-view][aria-pressed="true"]')?.focus();
+    return;
+  }
+  if(button.dataset.webPages){
+    Object.keys(filters).forEach(key=>filters[key]='');
+    if(button.dataset.webPages==='done')filters.status='done';
+    location.hash='stranky';
     return;
   }
   const {edit,go,map}=button.dataset;

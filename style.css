@@ -340,3 +340,29 @@ dialog{width:min(720px,calc(100% - 24px));border-radius:13px}
 .meeting-summary h2{display:grid;gap:4px;margin:0;font-size:1rem;overflow-wrap:anywhere}
 .meeting-content{display:grid;gap:9px;padding:11px 14px 14px;border-top:1px solid var(--line)}
 .meeting-content h3{margin:0}
+
+.web-dashboard .dashboard-summary{padding-right:34px}
+.web-dashboard-arrow{position:absolute;right:12px;top:10px;font-size:1.25rem;line-height:1}
+.web-progress{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:13px}
+.web-progress>div:first-child{flex:1;min-width:min(100%,250px)}
+.web-progress h2{margin-bottom:5px}
+.web-progress p{margin:0 0 7px;color:#29456d}
+.web-progress p strong{color:#153a7b;font-size:1.12rem}
+.web-progress progress{display:block;width:100%;height:.5rem;border:0;border-radius:99px;overflow:hidden;appearance:none;background:#cfddf2;color:#305cb4}
+.web-progress progress::-webkit-progress-bar{background:#cfddf2;border-radius:99px}
+.web-progress progress::-webkit-progress-value{background:#305cb4;border-radius:99px}
+.web-progress progress::-moz-progress-bar{background:#305cb4;border-radius:99px}
+.web-dashboard-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:13px}
+.web-priority-panel{background:#fff2e5;border-color:#d6ad83;border-top:4px solid #9e5222}
+.web-priority-panel h2{color:#733810}
+.web-next-panel{border-top:4px solid #31569a}
+.web-dashboard-columns .dashboard-items+.btn{margin-top:7px}
+.web-client-needs{margin-top:13px;background:#e9f0fc}
+.web-need-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.web-need{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding:8px 9px;text-align:left;background:#f9fbff;border:1px solid #a7bde0;border-radius:8px;color:#173966;font:inherit;font-weight:680;cursor:pointer}
+.web-need:hover:not(:disabled){background:#dce9ff}
+.web-need:disabled{cursor:default;opacity:.65}
+.web-need span{flex:none;font-size:1.15rem}
+@media(max-width:950px){.web-need-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:835px){.web-dashboard-columns{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:420px){.web-need-grid{grid-template-columns:minmax(0,1fr)}}
