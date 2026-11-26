@@ -1,4 +1,4 @@
-import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-11';
+import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-14';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -36,11 +36,11 @@ let socialChannel='kalendar', calendarMonth='', calendarChannel='', calendarForm
 const socialHref=channel=>'#some/'+channel;
 const canOpen=id=>{
   if(id==='prace')return allowedSections.length>0;
-  if(id==='ucet')return isAdmin;
+  if(id==='ucet')return Boolean(currentUserId());
   if(id==='bez-pristupu')return !isAdmin&&allowedSections.length===0;
   return allowedSections.includes(webViews.includes(id)?'web':id);
 };
-const firstView=()=>['prace','ucet','bez-pristupu'].find(canOpen);
+const firstView=()=>['prace','bez-pristupu','ucet'].find(canOpen);
 const taskSection=(category,meetingId,socialId)=>socialId?'some':meetingId?'meetingy':categories.includes(category)?'web':'roadmapa';
 function recordSection(record){
   if(record.kind==='task')return taskSection(record.category,record.meetingId,record.socialId);
@@ -113,7 +113,7 @@ function heading(title,description,actions=''){
 }
 function rowsTable(list){
   if(!list.length) return noResults('Filtrům neodpovídá žádná stránka.');
-  return '<div class="table-wrap"><table class="table"><thead><tr><th>Stránka / cílová URL</th><th>Typ</th><th>Služba</th><th>Stav</th><th>Priorita</th><th>Vlastník / termín</th></tr></thead><tbody>'+list.map(r=>'<tr><td>'+pageInfo(r)+'</td><td>'+esc(r.type)+'</td><td>'+esc(r.service)+'</td><td>'+statusBadge(r)+'</td><td>'+priorityBadge(r)+'</td><td>'+esc(r.owner||'—')+'<span class="url">'+dateText(r.date)+'</span></td></tr>').join('')+'</tbody></table></div>';
+  return '<div class="table-wrap"><table class="table"><thead><tr><th>Stránka / cílová URL</th><th>Typ</th><th>Služba</th><th>Stav</th><th>Priorita</th><th>Vlastník / termín</th></tr></thead><tbody>'+list.map(r=>'<tr><td>'+pageInfo(r)+'</td><td>'+esc(r.type)+'</td><td>'+esc(r.service)+'</td><td>'+statusBadge(r)+'</td><td>'+priorityBadge(r)+'</td><td>'+esc(taskOwner(r)||'—')+'<span class="url">'+dateText(r.date)+'</span></td></tr>').join('')+'</tbody></table></div>';
 }
 function card(r,body,extra=''){
   return '<article class="card"><div class="badges">'+statusBadge(r)+priorityBadge(r)+'</div><h3>'+esc(r.title)+'</h3>'+body+extra+'<div class="actions">'+action('Otevřít kartu',editAttr(r.id))+'</div></article>';
@@ -128,7 +128,7 @@ function overview(){
     '<section class="hero"><h2>Čtyři vstupní potřeby klientů</h2><div class="need-grid">'+needs.map((need,i)=>'<button class="need" '+editAttr(['pain','return','start','sport'][i])+'>'+esc(need)+'<span aria-hidden="true">↗</span></button>').join('')+'</div></section>'+
     '<section class="stats">'+stat(listed().length,'Stránek v sitemapě','stranky')+stat(listed().filter(isDone).length,'Publikováno / hotovo','stranky')+stat(missing().length,'Stránek k doplnění','podklady')+stat(tasksPending().length,'Otevřených úkolů','plan')+'</section>'+
     '<div class="overview"><section class="panel"><h2>Co ověřit jako první</h2>'+(['assessment','pricing','prague','acute'].map(id=>records.get(id)).filter(r=>r?.open).map(r=>row(r,r.open)).join('')||'<p class="fine">V hlavních kartách zbývají jen další podklady podle přehledu.</p>')+action('Všechny chybějící podklady →',goAttr('podklady'),'link')+'</section>'+
-    '<section class="panel"><h2>Nejbližší kroky</h2>'+(tasksPending().slice(0,4).map(r=>row(r,[r.category,r.owner,dateText(r.date)].filter(Boolean).join(' · '))).join('')||'<p class="fine">Všechny úkoly jsou hotové.</p>')+action('Otevřít plán kroků →',goAttr('plan'),'link')+'</section></div>';
+    '<section class="panel"><h2>Nejbližší kroky</h2>'+(tasksPending().slice(0,4).map(r=>row(r,[r.category,taskOwner(r),dateText(r.date)].filter(Boolean).join(' · '))).join('')||'<p class="fine">Všechny úkoly jsou hotové.</p>')+action('Otevřít plán kroků →',goAttr('plan'),'link')+'</section></div>';
 }
 function filterRows(){
   const q=filters.q.trim().toLocaleLowerCase('cs');
@@ -175,7 +175,7 @@ function projectSections(){
     group('Lékaři a spolupracující pracoviště',listed().filter(r=>r.id==='partners'||r.parent==='partners'));
 }
 function groupTasks(title,list){
-  return (title?'<h2 class="group-title">'+title+'</h2>':'')+cardGroup(list,r=>card(r,'<p>'+esc(r.description)+'</p><p><strong>Kontrola</strong> '+esc(r.check)+'</p>',r.owner||r.date?'<span class="url">'+esc([r.owner,dateText(r.date)].filter(Boolean).join(' · '))+'</span>':''));
+  return (title?'<h2 class="group-title">'+title+'</h2>':'')+cardGroup(list,r=>card(r,'<p>'+esc(r.description)+'</p><p><strong>Kontrola</strong> '+esc(r.check)+'</p>',taskOwner(r)||r.date?'<span class="url">'+esc([taskOwner(r),dateText(r.date)].filter(Boolean).join(' · '))+'</span>':''));
 }
 function taskView(){
   const measurement=view==='mereni';
@@ -201,25 +201,31 @@ const otherOwner='other';
 function assignedMemberId(task){
   if(Object.hasOwn(task,'ownerId'))return task.ownerId;
   const email=normalized(task.owner||'');
-  return email&&email===normalized(currentUserEmail()||'')?currentUserId():null;
+  if(!email)return null;
+  if(email===normalized(currentUserEmail()||''))return currentUserId();
+  return members.find(member=>normalized(assigneeEmails.get(member.user_id)||'')===email)?.user_id??null;
+}
+function preferredMemberName(member){
+  return (member.has_display_name?member.display_name:assigneeEmails.get(member.user_id))||member.display_name;
 }
 function memberLabel(member){
-  const duplicate=members.some(row=>row.user_id!==member.user_id&&normalized(row.display_name)===normalized(member.display_name));
-  return member.display_name+(duplicate?' · '+member.user_id.slice(0,8):'');
+  const label=preferredMemberName(member);
+  const duplicate=members.some(row=>row.user_id!==member.user_id&&normalized(preferredMemberName(row))===normalized(label));
+  return label+(duplicate?' · '+member.user_id.slice(0,8):'');
 }
 function taskOwner(task){
   const member=members.find(row=>row.user_id===assignedMemberId(task));
   return member?memberLabel(member):task.owner||'';
 }
-function ownerField(task){
+function ownerField(task,label='Držitel úkolu'){
   const member=members.find(row=>row.user_id===assignedMemberId(task));
   const useOther=!member&&Boolean(task.owner||task.ownerId);
   const choices=members.filter(row=>!task.socialId||task.publicationTask||socialReviewers.includes(row.user_id)||row.user_id===member?.user_id)
-    .map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}))
+    .map(row=>({value:row.user_id,label:memberLabel(row)}))
     .sort((a,b)=>a.label.localeCompare(b.label,'cs'));
   const choice=member?.user_id||(useOther?otherOwner:'');
-  return '<label class="field">Držitel úkolu<select name="ownerChoice">'+options([...choices,{value:otherOwner,label:'Jiné'}],choice,'Bez přiřazení')+'</select></label>'+
-    '<div class="wide" data-custom-owner '+(useOther?'':'hidden')+'><label class="field">Jiný držitel úkolu<input name="customOwner" placeholder="Např. agentura" value="'+esc(useOther?task.owner:'')+'" '+(useOther?'required':'disabled')+'></label></div>'+
+  return '<label class="field">'+label+'<select name="ownerChoice">'+options([...choices,{value:otherOwner,label:'Jiné'}],choice,'Bez přiřazení')+'</select></label>'+
+    '<div class="wide" data-custom-owner '+(useOther?'':'hidden')+'><label class="field">Jiný '+label.toLocaleLowerCase('cs')+'<input name="customOwner" placeholder="Např. agentura" value="'+esc(useOther?task.owner:'')+'" '+(useOther?'required':'disabled')+'></label></div>'+
     (membersReady?'':'<p class="help wide">Tým se nepodařilo načíst. Znovu ho načtete obnovením stránky.</p>');
 }
 function renderNotifications(){
@@ -321,7 +327,7 @@ function taskList(tasks,editable=false){
     const memberId=assignedMemberId(task);
     const member=members.some(row=>row.user_id===memberId)?memberId:'';
     const ownerChoices=members.filter(row=>!task.socialId||socialReviewers.includes(row.user_id)||row.user_id===member)
-      .map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}));
+      .map(row=>({value:row.user_id,label:memberLabel(row)}));
     const custom=!member&&taskOwner(task);
     if(custom)ownerChoices.unshift({value:otherOwner,label:custom});
     const quickAttr=field=>'data-quick-task="'+id+'" data-quick-field="'+field+'"';
@@ -473,7 +479,7 @@ function socialReviewDetails(r,editable){
   const publicationTask=records.get('publish-'+r.id);
   const canPublish=editable&&state==='approved'&&publicationTask?.ownerId===currentUserId();
   const choices=members.filter(row=>socialReviewers.includes(row.user_id))
-    .map(row=>({value:row.user_id,label:assigneeEmails.get(row.user_id)||memberLabel(row)}));
+    .map(row=>({value:row.user_id,label:memberLabel(row)}));
   return '<section class="form-section drive-section social-review"><h3>Schválení a publikace</h3><div class="badges">'+socialReviewBadge(r)+'</div>'+
     (state==='pending'?'<p>Čeká na <strong>'+esc(socialMember(review.reviewerId))+'</strong></p>':'')+
     (state==='approved'&&publicationTask?'<p>Publikuje <strong>'+esc(socialMember(publicationTask.ownerId))+'</strong></p>':'')+
@@ -763,7 +769,7 @@ function render(){
     if(id!=='prehled')return link(id);
     return link(id,'Web')+(webViews.includes(view)?'<div class="subnav">'+webViews.map(item=>link(item)).join('')+'</div>':'');
   }).join('');
-  settingsLink.hidden=!isAdmin;
+  settingsLink.hidden=!canOpen('ucet');
   if(view==='ucet')settingsLink.setAttribute('aria-current','page');
   else settingsLink.removeAttribute('aria-current');
   const sync=document.querySelector('#sync');
@@ -810,7 +816,15 @@ async function refreshMembers(){
   assigneeEmails=new Map(emails.status==='fulfilled'?emails.value.map(row=>[row.user_id,row.email]):[]);
   socialReviewers=reviewers.status==='fulfilled'?reviewers.value:[];
 }
-document.addEventListener('fcg-members-changed',()=>refreshMembers().then(renderNotifications));
+document.addEventListener('fcg-members-changed',event=>{
+  const {userId,displayName}=event.detail||{};
+  const member=members.find(row=>row.user_id===userId);
+  if(member&&displayName){
+    member.display_name=displayName;
+    member.has_display_name=true;
+  }
+  refreshMembers().then(renderNotifications);
+});
 async function load(){
   loading=true;
   render();
@@ -886,7 +900,7 @@ function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
   const socialPost=socialEntry&&!materials;
   const editable=canWrite&&!r.publicationTask&&!(socialPost&&r.review?.state==='published');
   const pageChoices=listed().filter(p=>p.id!==r.id).map(p=>({value:p.id,label:p.title}));
-  const workflow=(task?ownerField(r):input(r,'owner','Vlastník'))+input(r,'date','Termín',{type:'date'})+
+  const workflow=ownerField(r,task?'Držitel úkolu':'Vlastník')+input(r,'date','Termín',{type:'date'})+
     input(r,'status','Stav',{values:statuses,required:true})+input(r,'priority','Priorita',{values:priorities,required:true});
   const requiredTitle=input(r,'title',task?'Název úkolu':'Název stránky',{wide:true,required:true});
   let fields;
@@ -922,7 +936,7 @@ function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
     const socialSource=records.get(r.socialId);
     const taskAreas=r.socialId?['SoMe']:[...new Set([r.category,...projectAreas,...categories])].filter(category=>category&&canOpen(taskSection(category,r.meetingId)));
     const page=canOpen('web')&&records.get(r.pageId);
-    const reviewerChoices=members.map(member=>({value:member.user_id,label:assigneeEmails.get(member.user_id)||memberLabel(member)}));
+    const reviewerChoices=members.map(member=>({value:member.user_id,label:memberLabel(member)}));
     if(r.reviewerId&&!members.some(member=>member.user_id===r.reviewerId)){
       reviewerChoices.push({value:r.reviewerId,label:'Dříve nastavený schvalovatel'});
     }
@@ -1009,7 +1023,7 @@ function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
     const {channel,postFormat}=form.elements;
     channel.onchange=()=>{postFormat.innerHTML=socialFormatOptions(channel.value,postFormat.value);};
   }
-  if(task){
+  if(form.elements.ownerChoice){
     const {ownerChoice,customOwner}=form.elements;
     ownerChoice.onchange=()=>{
       const custom=ownerChoice.value===otherOwner;
@@ -1106,18 +1120,18 @@ function editor(record,defaultType,meetingId,pageId,socialId,socialDate=''){
       finally{controls.forEach(el=>el.disabled=false);}
       return;
     }
-    if(task){
+    if(form.elements.ownerChoice){
       const choice=fd.get('ownerChoice');
       const member=members.find(row=>row.user_id===choice);
       const custom=fd.get('customOwner')?.trim();
-      if(choice===otherOwner&&!custom){showError('Doplňte jméno nebo název držitele úkolu.');return;}
+      if(choice===otherOwner&&!custom){showError('Doplňte jméno nebo název.');return;}
       if(choice&&choice!==otherOwner&&!member){showError('Vybraný uživatel už není v nabídce. Otevřete úkol znovu.');return;}
       update.owner=member?.display_name||(choice===otherOwner?custom:'');
       if(member||choice!==otherOwner||custom!==r.owner||membersReady){
         update.ownerId=member?.user_id??(choice===otherOwner&&custom===r.owner?r.ownerId??null:null);
       }
-      update.tags=parseTags(fd.get('tags')||'');
     }
+    if(task)update.tags=parseTags(fd.get('tags')||'');
     if(meeting){
       update.title ||= 'Schůzka '+dateText(update.date);
       const addTask=event.submitter?.hasAttribute('data-save-and-add');

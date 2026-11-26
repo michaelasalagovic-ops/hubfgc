@@ -219,9 +219,11 @@ export async function fileUrl(path){
   const url=URL.createObjectURL(blob);fileUrls.set(path,url);return url;
 }
 export function accountPanel(){
-  if(!isAdmin)return '';
+  const profile='<form class="form-grid panel account-name" data-display-name><label class="field">Zobrazované jméno v HUBu<input name="displayName" type="text" maxlength="60" required></label><button type="submit" class="btn">Uložit jméno</button><small class="wide" data-name-hint></small><p class="wide" role="status" data-name-status></p></form>';
+  const heading='<div class="heading"><div><h1>Nastavení</h1></div></div>';
+  if(!isAdmin)return heading+profile;
   return '<div class="heading"><div><h1>Nastavení</h1><p>Vaše role v HUBu: <strong>'+roleLabels.admin+'</strong></p></div></div>'+
-    '<form class="form-grid panel account-name" data-display-name><label class="field">Zobrazované jméno v HUBu<input name="displayName" type="text" maxlength="60" required></label><button type="submit" class="btn">Uložit jméno</button><small class="wide" data-name-hint></small><p class="wide" role="status" data-name-status></p></form>'+
+    profile+
     '<form class="form-grid panel" data-password><label class="field">Nové heslo do hubu<input type="password" name="password" minlength="12" autocomplete="new-password" required></label><button class="btn">Změnit vlastní heslo</button></form>'+
     '<h2>Uživatelé hubu</h2><div class="table-wrap"><table class="table"><thead><tr><th scope="col">E-mail</th><th scope="col">Role v HUBu</th><th scope="col">Přihlašovací účet</th><th scope="col">Povolené sekce</th><th scope="col">Akce</th></tr></thead><tbody data-members></tbody></table></div>'+
     '<form class="form-grid panel" data-member aria-labelledby="create-member-title"><h3 class="wide" id="create-member-title">Nový přihlašovací účet</h3>'+
@@ -234,8 +236,6 @@ export function accountPanel(){
     '<p role="status" data-account-status></p>';
 }
 export async function bindAccount(){
-  if(!isAdmin)return;
-  const status=main.querySelector('[data-account-status]');
   const nameForm=main.querySelector('[data-display-name]');
   const nameField=nameForm.elements.displayName;
   const nameStatus=nameForm.querySelector('[data-name-status]');
@@ -243,8 +243,8 @@ export async function bindAccount(){
   const hint=nameForm.querySelector('[data-name-hint]');
   const showNameHint=()=>{
     hint.textContent=session.user?.user_metadata?.fcg_display_name
-      ?'Toto jméno se členům HUBu zobrazuje při výběru držitele úkolu.'
-      :'V nabídce držitelů jste zatím vedeni jako Člen týmu · '+(currentUserId()||'').slice(0,8)+'.';
+      ?'Toto jméno se zobrazuje u vlastníků, držitelů úkolů a schvalovatelů.'
+      :'Nastavte jméno, pod kterým vás má tým najít v nabídkách.';
   };
   showNameHint();
   nameForm.onsubmit=async event=>{
@@ -261,10 +261,12 @@ export async function bindAccount(){
       nameField.value=name;
       showNameHint();
       nameStatus.textContent='Jméno bylo uloženo.';
-      document.dispatchEvent(new Event('fcg-members-changed'));
+      document.dispatchEvent(new CustomEvent('fcg-members-changed',{detail:{userId:currentUserId(),displayName:name}}));
     }catch{nameStatus.textContent='Jméno se nepodařilo uložit.';}
     finally{button.disabled=false;}
   };
+  if(!isAdmin)return;
+  const status=main.querySelector('[data-account-status]');
   main.querySelector('[data-password]').onsubmit=async e=>{
     e.preventDefault();const form=e.currentTarget;
     try{const r=await api('/auth/v1/user',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:form.password.value})});if(!r.ok)throw Error();form.reset();status.textContent='Heslo bylo změněno.';}catch{status.textContent='Změna hesla selhala.';}
