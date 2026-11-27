@@ -4,7 +4,7 @@ let session=JSON.parse(sessionStorage.getItem('fcg-session')||'null');
 let refreshing;
 export let isAdmin=false;
 export let canWrite=false;
-export const sectionLabels={roadmapa:'Roadmapa',meetingy:'Meetingy',dokumenty:'Dokumenty',web:'Web',strategie:'Značka a nabídka',some:'SoMe'};
+export const sectionLabels={roadmapa:'Roadmapa',meetingy:'Meetingy',dokumenty:'Dokumenty',web:'Web',strategie:'Značka a nabídka',some:'SoMe','gym-smichov':'Gym Smíchov'};
 export let allowedSections=[];
 export async function refreshSections(){
   const response=await api('/rest/v1/rpc/fcg_my_sections',{method:'POST'});
@@ -306,7 +306,8 @@ export async function bindAccount(){
     group.onchange=()=>{save.disabled=same();};
     save.onclick=async()=>{
       if(save.disabled)return;
-      const next=boxes.filter(check=>check.checked).map(check=>check.value);
+      const next=[...assigned.filter(key=>!Object.hasOwn(sectionLabels,key)),
+        ...boxes.filter(check=>check.checked).map(check=>check.value)];
       save.disabled=group.disabled=true;
       try{
         const path='/rest/v1/fcg_members?email=eq.'+encodeURIComponent(address)+
