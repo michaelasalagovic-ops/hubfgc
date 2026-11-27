@@ -1,0 +1,3 @@
+# HUB section access
+
+When adding a top-level HUB section, include access setup in the same change. Register its key in the section picker and the database's valid section keys and administrator section list. For new team sections, add the new key to existing memberships without replacing their other selections, and include it in the default for new memberships. Respect explicitly restricted audiences. Use the same section access check for navigation and direct routes. Verify that administrators can manage the new section and that existing permissions are preserved. Update client asset versions when publishing.
