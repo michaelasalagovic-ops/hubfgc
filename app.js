@@ -9,6 +9,7 @@ const sections = {
   dokumenty:['▤','Dokumenty','Manuály a pracovní podklady FyzioGym Cooper.'],
   meetingy:['▣','Meetingy','Zápisy ze schůzek a navazující úkoly.'],
   some:['◎','SoMe','Plán příspěvků a podklady pro sociální sítě.'],
+  'gym-smichov':['⌖','Gym Smíchov','Oprávnění k poskytování zdravotních služeb pro ambulanci ortopeda.'],
   strategie:['◇','Značka a nabídka','Pracovní podklady pro brand book, služby a rozvoj péče.'],
   prehled:['⌂','Přehled','Přestavba webu na jednom místě'],
   stranky:['▤','Stránky','Obsahové zadání a stav jednotlivých stránek.'],
@@ -35,7 +36,7 @@ const calendarFormats=Object.entries({...socialFormats.instagram,...socialFormat
 let socialChannel='kalendar', calendarMonth='', calendarChannel='', calendarFormat='';
 const socialHref=channel=>'#some/'+channel;
 const canOpen=id=>{
-  if(id==='prace')return allowedSections.length>0;
+  if(id==='prace'||id==='gym-smichov')return allowedSections.length>0;
   if(id==='ucet')return Boolean(currentUserId());
   if(id==='bez-pristupu')return !isAdmin&&allowedSections.length===0;
   return allowedSections.includes(webViews.includes(id)?'web':id);
@@ -886,6 +887,148 @@ main.addEventListener('drop',async event=>{
   await persist(r.id,versions.get(r.id)||0,{...r,status},false);
 });
 
+const gymPermitSteps=[
+  [
+    "Způsobilý žadatel",
+    "Určit poskytovatele. U fyzické osoby ověřit plnoletost, svéprávnost, bezúhonnost a případně oprávnění k pobytu. U právnické osoby ověřit bezúhonnost členů statutárního orgánu a ustanovit odborného zástupce."
+  ],
+  [
+    "Odborná způsobilost",
+    "Doložit způsobilost k samostatnému výkonu v oboru. U odborného zástupce doložit kvalifikaci, souhlas s ustanovením a vztah k poskytovateli."
+  ],
+  [
+    "Personální zabezpečení péče",
+    "Připravit seznam pracovníků a doložit kvalifikaci odpovídající ambulantní ortopedii a plánovanému rozsahu péče."
+  ],
+  [
+    "Právo užívat prostory",
+    "Doložit právo užívat prostory k poskytování zdravotních služeb a ověřit povolený účel užívání."
+  ],
+  [
+    "Vyhovující prostory a vybavení",
+    "Prověřit ordinaci, čekárnu, zázemí a vybavení pro ortopedická vyšetření a neinvazivní výkony."
+  ],
+  [
+    "Schválený provozní řád",
+    "Zpracovat provozní řád pracoviště a předložit ho Hygienické stanici hlavního města Prahy. Schválený řád a rozhodnutí přiložit k žádosti."
+  ],
+  [
+    "Úplná žádost na magistrát",
+    "Uvést žadatele, místo, obor, druh a formu péče a plánovaný termín zahájení. Přiložit doklady a prohlášení včetně prohlášení o vybavení. Správní poplatek za udělení oprávnění je 1 000 Kč."
+  ]
+];
+const gymOrdinaceChecklist=[
+  [
+    "Prostory",
+    [
+      [
+        "ordinace",
+        "Ordinace má alespoň 13 m² a vlastní umyvadlo. Je v ní prostor pro vyšetřovací stůl, přístroj a svlékání a odložení oděvu."
+      ],
+      [
+        "cekarna",
+        "Čekárna má alespoň 7 m² a místa k sezení. Pokud slouží více zdravotnickým pracovištím, má alespoň 10 m². Čekací zónu zakreslete do půdorysu."
+      ],
+      [
+        "wc",
+        "WC pro pacienty má umyvadlo v kabině nebo předsíni. Společné WC pro pacienty a personál je možné u zařízení s nejvýše dvěma ordinacemi či pracovišti."
+      ],
+      [
+        "sklad",
+        "Vhodné skříně nebo sklad umožňují oddělit materiál, prádlo a úklidové a dezinfekční prostředky."
+      ],
+      [
+        "zazemi",
+        "Ověřte pitnou a teplou vodu, odpad, větrání, vytápění, elektřinu a telefonní spojení. Zakreslete trasu pacienta od vstupu k ordinaci a WC."
+      ]
+    ]
+  ],
+  [
+    "Vybavení ordinace",
+    [
+      [
+        "stul",
+        "Vyšetřovací stůl a lehátko. Pokud obě funkce plní jeden kus, doložte je v seznamu vybavení."
+      ],
+      [
+        "nabytek",
+        "Vyšetřovací svítidlo, pracovní nábytek, židle pro pacienta, stolek na přístroje, skříň na léky a skříň na pomůcky. U papírové dokumentace bez centrální kartotéky přidejte kartotéční skříň."
+      ],
+      [
+        "meridla",
+        "Tlakoměr, fonendoskop, lékařský teploměr, osobní váha a výškoměr."
+      ],
+      [
+        "pomoc",
+        "Léky a vybavení pro první pomoc a resuscitaci: resuscitační rouška nebo vak s maskou, vzduchovody, rukavice, pomůcky k zástavě krvácení a zajištění žilního vstupu."
+      ],
+      [
+        "snimky",
+        "Monitor pro digitální snímky nebo negatoskop pro snímky na filmu. Vlastní RTG není v seznamu vybavení ambulantní ortopedie. Požadavek na sonograf se váže na preventivní vyšetření kyčlí kojenců a dostupnost vyšetření jinde."
+      ]
+    ]
+  ],
+  [
+    "Rázová vlna a další přístroje",
+    [
+      [
+        "modely",
+        "Sepište výrobce, model, určený účel a umístění každého přístroje. Připravte návod a ověřte požadovanou instruktáž, servis, bezpečnostně technické kontroly a související záznamy."
+      ],
+      [
+        "instalace",
+        "Zakreslete rázovou vlnu vedle vyšetřovacího stolu a ověřte instalační požadavky a prostor pro obsluhu. Samotná neinvazivní aplikace nevyžaduje zákrokový sál."
+      ],
+      [
+        "vykony",
+        "S ortopedem potvrďte, zda plánuje obstřiky, punkce nebo odběry. Pokud ano, zahrňte je do podkladů pro hygienu a ověřte sterilní materiál, ostrý odpad, skladování léčiv a nakládání s biologickým materiálem podle výkonu."
+      ]
+    ]
+  ]
+];
+
+function gymChecklistKey(id){
+  return 'fcg:gym-smichov:'+currentUserId()+':'+id;
+}
+
+function isGymItemChecked(id){
+  try{return localStorage.getItem(gymChecklistKey(id))==='1';}catch{return false;}
+}
+
+function gymSmichov(){
+  const checklist=gymOrdinaceChecklist.map(([title,items])=>
+    '<fieldset><legend>'+esc(title)+'</legend><ul>'+items.map(([id,label])=>
+      '<li><label><input type="checkbox" data-gym-item="'+esc(id)+'"'+
+      (isGymItemChecked(id)?' checked':'')+'> '+esc(label)+'</label></li>'
+    ).join('')+'</ul></fieldset>'
+  ).join('');
+  const steps=gymPermitSteps.map(([title,description],index)=>
+    '<details class="card meeting-card"'+(index===4?' open':'')+'>'+
+    '<summary class="meeting-summary"><h2>'+(index+1)+'. '+esc(title)+'</h2></summary>'+
+    '<div class="meeting-content"><p>'+esc(description)+'</p>'+
+    (index===4?'<p><small>Zaškrtnutí se ukládá pro váš účet v tomto prohlížeči.</small></p>'+
+      checklist+'<p><a href="https://e-sbirka.gov.cz/sb/2012/92">Vyhláška č. 92/2012 Sb.</a></p>':'')+
+    '</div></details>'
+  ).join('');
+  return heading('Gym Smíchov',sections['gym-smichov'][2])+
+    '<section class="dashboard-panel" aria-labelledby="gym-permit-title">'+
+    '<h2 id="gym-permit-title">Podmínky pro udělení oprávnění</h2>'+steps+
+    '<p><a href="https://portalprazana.cz/pro-verejnost/sluzby/129">Žádost a přílohy na Portálu Pražana</a></p></section>';
+}
+
+main.addEventListener('change',event=>{
+  const checkbox=event.target.closest('input[data-gym-item]');
+  if(!checkbox)return;
+  try{
+    const key=gymChecklistKey(checkbox.dataset.gymItem);
+    if(checkbox.checked)localStorage.setItem(key,'1');
+    else localStorage.removeItem(key);
+  }catch{
+    checkbox.checked=!checkbox.checked;
+    flash('Zaškrtnutí se v tomto prohlížeči nepodařilo uložit.');
+  }
+});
+
 function render(){
   if(!canOpen(view)){
     view=firstView();
@@ -895,7 +1038,7 @@ function render(){
   const link=(id,title=sections[id][1])=>'<a href="#'+id+'" '+(id===view?'aria-current="page"':id==='prehled'&&webViews.includes(view)?'class="section-active"':'')+
     '><span class="nav-icon" aria-hidden="true">'+sections[id][0]+'</span>'+title+'</a>';
   document.querySelector('.brand').setAttribute('href','#'+firstView());
-  document.querySelector('#nav').innerHTML=['prace','roadmapa','meetingy','dokumenty','prehled','some','strategie'].filter(canOpen).map(id=>{
+  document.querySelector('#nav').innerHTML=['prace','roadmapa','meetingy','dokumenty','prehled','some','strategie','gym-smichov'].filter(canOpen).map(id=>{
     if(id!=='prehled')return link(id);
     return link(id,'Web')+(webViews.includes(view)?'<div class="subnav">'+webViews.map(item=>link(item)).join('')+'</div>':'');
   }).join('');
@@ -906,7 +1049,7 @@ function render(){
   sync.textContent=ready?(canWrite?'Ukládání do hubu':'Režim čtení'):loading?'Načítám data…':'Připojení se nezdařilo';
   sync.classList.toggle('ready',ready);
   const renderView=({
-    prace:myWork,ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,some:social,strategie:knowledge,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView,
+    prace:myWork,ucet:accountPanel,roadmapa:roadmap,dokumenty:documentList,meetingy:meetings,some:social,strategie:knowledge,'gym-smichov':gymSmichov,prehled:overview,stranky:pageList,sitemap,obsah:projectSections,lokalni:projectSections,mereni:taskView,podklady:gapView,plan:taskView,
     'bez-pristupu':()=>noResults('Zatím nemáte přístup k žádné sekci HUBu.')
   })[view];
   main.innerHTML='<div class="work-dashboard">'+
