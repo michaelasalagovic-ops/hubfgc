@@ -1,4 +1,4 @@
-import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,loadMeetingInsightStatus,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=hub-19';
+import {start,signOut,isAdmin,canWrite,allowedSections,refreshSections,currentUserId,currentUserEmail,loadAssignees,loadAssigneeEmails,loadSocialReviewers,loadRecords,loadMeetingInsightStatus,saveRecord,upload,uploadSocialMedia,fileUrl,accountPanel,bindAccount} from './account.js?v=gym-smichov-access-1';
 import {needs,topics} from './data.js';
 
 const sections = {
@@ -36,7 +36,7 @@ const calendarFormats=Object.entries({...socialFormats.instagram,...socialFormat
 let socialChannel='kalendar', calendarMonth='', calendarChannel='', calendarFormat='';
 const socialHref=channel=>'#some/'+channel;
 const canOpen=id=>{
-  if(id==='prace'||id==='gym-smichov')return allowedSections.length>0;
+  if(id==='prace')return allowedSections.length>0;
   if(id==='ucet')return Boolean(currentUserId());
   if(id==='bez-pristupu')return !isAdmin&&allowedSections.length===0;
   return allowedSections.includes(webViews.includes(id)?'web':id);
